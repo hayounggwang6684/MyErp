@@ -1,0 +1,18 @@
+{
+  "files.trimTrailingWhitespace": false,
+  "markdown.preview.scrollEditorWithPreview": true,
+  "markdown.preview.scrollPreviewWithEditor": true,
+  "markdown-mermaid.darkModeTheme": "default",
+  "markdown-mermaid.lightModeTheme": "default",
+  "markdown-mermaid.controls.show": "always",
+  "markdown-mermaid.mouseNavigation.enabled": "alt",
+  "markdownlint.run": "onSave",
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "off",
+      "strings": "off",
+      "other": "off"
+    }
+  }
+}

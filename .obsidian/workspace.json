@@ -1,0 +1,222 @@
+{
+  "main": {
+    "id": "7d7bc4e839206836",
+    "type": "split",
+    "children": [
+      {
+        "id": "eef9a8ce685601db",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "eedfd252cfbfc091",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/00-index.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "00-index"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "451888c3e54d793c",
+    "type": "split",
+    "children": [
+      {
+        "id": "2aeaaa1348be7805",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7c8ddeabf229e5aa",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "파일 탐색기"
+            }
+          },
+          {
+            "id": "8bca0480771d6cd7",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "검색"
+            }
+          },
+          {
+            "id": "63983d61e18ff952",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "북마크"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "62d44b59a92d3350",
+    "type": "split",
+    "children": [
+      {
+        "id": "01a062b2fcb1c79e",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "968a14f1ef180b73",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "백링크"
+            }
+          },
+          {
+            "id": "f7e3c512799d52ff",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "나가는 링크"
+            }
+          },
+          {
+            "id": "707873768004ac58",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "태그"
+            }
+          },
+          {
+            "id": "d84dc9601de72d32",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "모든 속성"
+            }
+          },
+          {
+            "id": "e54e3238a4320d35",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "개요"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:빠른 전환기 열기": false,
+      "graph:그래프 뷰 열기": false,
+      "canvas:새 캔버스 만들기": false,
+      "daily-notes:오늘의 일일 노트 열기": false,
+      "templates:템플릿 삽입": false,
+      "command-palette:명령어 팔레트 열기": false,
+      "bases:새 베이스 생성하기": false
+    }
+  },
+  "active": "eedfd252cfbfc091",
+  "lastOpenFiles": [
+    "docs/workflows/06-shipping-workflow.md",
+    "docs/workflows/01-repair-intake-workflow.md",
+    "docs/workflows/05-inventory-workflow.md",
+    "docs/workflows/04-parts-sales-workflow.md",
+    "docs/workflows/07-invoice-workflow.md",
+    "docs/workflows/03-quotation-order-workflow.md",
+    "docs/security/02-login-authentication.md",
+    "docs/security/03-user-management.md",
+    "docs/security/04-permission-model.md",
+    "docs/workflows/02-repair-process-workflow.md",
+    "docs/security/05-security-implementation-priority.md",
+    "docs/security/01-security-operations-summary.md",
+    "docs/01-development-workflow.md",
+    "docs/security/security-operations-summary.md",
+    "docs/14-development-workflow.md",
+    "docs/workflows/12-shipping-workflow.md",
+    "docs/workflows/11-inventory-workflow.md",
+    "docs/workflows/13-invoice-workflow.md",
+    "docs/workflows/09-quotation-order-workflow.md",
+    "docs/workflows/10-parts-sales-workflow.md",
+    "docs/workflows/08-repair-process-workflow.md",
+    "docs/security/06-security-implementation-priority.md",
+    "docs/workflows/07-repair-intake-workflow.md",
+    "docs/security/05-permission-model.md",
+    "docs/security/04-user-management.md",
+    "docs/security/03-login-authentication.md",
+    "src/modules/security-exceptions/index.ts",
+    "src/modules/sessions/index.ts",
+    "src/modules/audit/index.ts",
+    "src/modules/permissions/index.ts",
+    "src/modules/users/index.ts",
+    "src/modules/auth/index.ts",
+    "src/app/main.ts",
+    "scripts",
+    "tests/users",
+    "tests/sessions"
+  ]
+}
