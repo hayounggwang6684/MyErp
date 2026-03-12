@@ -1,4 +1,1 @@
-export const usersModule = {
-  name: "users",
-  status: "draft",
-};
+export { userService } from "./user.service.js";

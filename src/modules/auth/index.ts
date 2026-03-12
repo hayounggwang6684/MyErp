@@ -1,4 +1,2 @@
-export const authModule = {
-  name: "auth",
-  status: "draft",
-};
+export { authController } from "./auth.controller.js";
+export { authService } from "./auth.service.js";

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ERP MFA</title>
+    <link rel="stylesheet" href="./prototype.css" />
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="brand-panel">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="brand-title">2차 인증</h1>
+        <p class="brand-subtitle">
+          등록된 Authenticator 앱의 6자리 코드를 입력해 로그인을 완료합니다.
+        </p>
+      </section>
+      <section class="auth-side">
+        <article class="auth-card compact">
+          <div class="topline">
+            <span class="status-badge ok">접속 인증서 확인 완료</span>
+          </div>
+          <h2 class="card-title">TOTP 인증</h2>
+          <p class="card-copy">API 가정: <code>POST /api/v1/auth/mfa/verify</code></p>
+
+          <div class="message error">예시 상태: 인증 코드가 만료되기 전에 입력해 주세요.</div>
+
+          <div class="field">
+            <label>Authenticator 코드</label>
+            <div class="otp-row">
+              <input class="otp-field" value="1" />
+              <input class="otp-field" value="2" />
+              <input class="otp-field" value="3" />
+              <input class="otp-field" value="4" />
+              <input class="otp-field" value="5" />
+              <input class="otp-field" value="6" />
+            </div>
+          </div>
+
+          <div class="button-row">
+            <a class="primary-button" href="./dashboard.html">인증</a>
+            <a class="ghost-button" href="./login.html">다시 로그인</a>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

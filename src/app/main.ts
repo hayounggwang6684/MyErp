@@ -1,7 +1,9 @@
-// ERP 애플리케이션 시작점 초안.
+import { createApp } from "../shared/infrastructure/http/express-app.js";
+import { registerRoutes } from "./routes.js";
+
 export function bootstrapApp() {
-  return {
-    status: "draft",
-    message: "ERP app bootstrap placeholder",
-  };
+  const app = createApp();
+  registerRoutes(app);
+
+  return app;
 }

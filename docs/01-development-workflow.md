@@ -32,7 +32,7 @@
 | --- | --- |
 | Mac 개발 PC | Codex를 사용한 코드 작성 |
 | GitHub Repository | 코드 저장소 및 버전 관리 |
-| Test PC (Windows) | 실제 실행 환경 테스트 |
+| Test PC (Windows) | 설치형 클라이언트 실제 실행 환경 테스트 |
 
 개발 흐름 개요
 
@@ -63,22 +63,22 @@ Mac 개발 PC에서 Codex를 사용하여 프로젝트를 수정한다.
 
 ---
 
-### Step 2. Feature 브랜치 생성
+### Step 2. 작업 브랜치 생성
 
-새 기능 또는 수정 작업은 **feature 브랜치**에서 진행한다.
+새 기능 또는 수정 작업은 **codex 브랜치**에서 진행한다.
 
 예
 
 ```text
-feature/login-system
-feature/repair-workflow
-feature/inventory-module
+codex/login-system
+codex/repair-workflow
+codex/inventory-module
 ```
 
 브랜치 생성
 
 ```bash
-git checkout -b feature/<feature-name>
+git checkout -b codex/<feature-name>
 ```
 
 ---
@@ -108,7 +108,7 @@ git commit -m "feat: implement login authentication"
 로컬 브랜치를 GitHub에 업로드한다.
 
 ```bash
-git push origin feature/<feature-name>
+git push origin codex/<feature-name>
 ```
 
 ---
@@ -126,7 +126,7 @@ git clone <repository-url>
 브랜치 전환
 
 ```bash
-git checkout feature/<feature-name>
+git checkout codex/<feature-name>
 ```
 
 최신 코드 업데이트
@@ -141,10 +141,11 @@ git pull
 
 테스트 PC에서 다음 항목을 검증한다.
 
-- 프로그램 실행 여부
+- 설치 파일 실행 여부
 - UI 정상 작동
 - 데이터 처리
 - 시스템 오류 발생 여부
+- 앱 시작 시 GitHub Releases 업데이트 확인 동작
 
 문제가 발견되면 Mac 개발 PC에서 수정 후 다시 브랜치에 반영한다.
 
@@ -156,7 +157,7 @@ git pull
 
 ```bash
 git checkout main
-git merge feature/<feature-name>
+git merge codex/<feature-name>
 git push origin main
 ```
 
@@ -167,12 +168,12 @@ git push origin main
 | 브랜치 | 역할 |
 | --- | --- |
 | main | 안정 버전 |
-| feature/* | 기능 개발 브랜치 |
+| codex/* | 기능 개발 브랜치 |
 
 규칙
 
 - main 브랜치는 항상 실행 가능한 상태를 유지해야 한다.
-- feature 브랜치에서 개발 후 main으로 병합한다.
+- codex 브랜치에서 개발 후 main으로 병합한다.
 
 ---
 
@@ -186,6 +187,7 @@ git push origin main
 4. 문제 없을 경우 main 병합
 
 테스트 PC는 **최종 실행 환경 검증 용도**이다.
+설치형 클라이언트 기준으로는 로그인 화면, MFA 화면, 대시보드 진입 여부와 업데이트 확인 동작을 우선 검증한다.
 
 ---
 
@@ -193,7 +195,7 @@ git push origin main
 
 Codex 사용 시 다음 원칙을 따른다.
 
-1. feature 브랜치에서만 작업한다.
+1. codex 브랜치에서만 작업한다.
 2. main 브랜치에서 직접 수정하지 않는다.
 3. 커밋 전 코드 오류 여부를 확인한다.
 4. 변경 사항은 작은 단위로 커밋한다.
@@ -223,5 +225,6 @@ docs/
 - GitHub Actions 기반 자동 테스트
 - Windows 자동 빌드
 - CI/CD 파이프라인 구축
+- GitHub Releases 기반 설치 파일 자동 게시
 
 ---

@@ -1,4 +1,1 @@
-export const sessionsModule = {
-  name: "sessions",
-  status: "draft",
-};
+export { sessionService } from "./session.service.js";

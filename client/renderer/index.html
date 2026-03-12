@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sunjin ERP Client</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="client-shell">
+      <aside class="settings-panel">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="panel-title">(주)선진종합 클라이언트</h1>
+        <p class="panel-copy">Windows 설치형 ERP 클라이언트. 서버 URL과 GitHub Releases 업데이트 경로를 여기서 관리합니다.</p>
+
+        <div class="settings-card">
+          <label class="field-label" for="server-url">서버 URL</label>
+          <input id="server-url" class="text-field" placeholder="https://erp.example.com" />
+
+          <label class="field-label" for="repo-owner">GitHub Owner</label>
+          <input id="repo-owner" class="text-field" placeholder="owner" />
+
+          <label class="field-label" for="repo-name">GitHub Repo</label>
+          <input id="repo-name" class="text-field" placeholder="repo" />
+
+          <div class="button-row">
+            <button id="save-config" class="secondary-button" type="button">설정 저장</button>
+            <button id="check-updates" class="ghost-button" type="button">업데이트 확인</button>
+          </div>
+          <div id="update-status" class="message info">앱 시작 시 최신 GitHub Releases를 확인합니다.</div>
+        </div>
+      </aside>
+
+      <main class="content-shell">
+        <section id="login-screen" class="screen active">
+          <div class="auth-layout">
+            <section class="brand-panel">
+              <p class="brand-top">SHERWOOD</p>
+              <h2 class="brand-title">(주)선진종합</h2>
+              <p class="brand-subtitle">Engine Repair &amp; Parts Sales ERP. 설치형 클라이언트에서 로그인, MFA, 대시보드까지 이어집니다.</p>
+              <div class="brand-tags">
+                <span>Electron Client</span>
+                <span>Repair</span>
+                <span>Inventory</span>
+              </div>
+            </section>
+            <section class="auth-side">
+              <article class="auth-card">
+                <div class="topline">
+                  <span class="status-badge ok">설치형 클라이언트</span>
+                </div>
+                <h2 class="card-title">계정 로그인</h2>
+                <p class="card-copy">서버 API: <code>POST /api/v1/auth/login</code></p>
+                <form id="login-form">
+                  <div class="field">
+                    <label for="login-id">아이디</label>
+                    <input id="login-id" name="username" class="text-field" value="ha" />
+                  </div>
+                  <div class="field">
+                    <label for="login-password">비밀번호</label>
+                    <input id="login-password" name="password" class="password-field" type="password" value="1234" />
+                  </div>
+                  <input type="hidden" name="device_id" value="client-win-001" />
+                  <div id="login-feedback" class="message info">기본 사용자 계정은 ha / 1234 입니다.</div>
+                  <div class="button-row">
+                    <button class="primary-button" type="submit">로그인</button>
+                  </div>
+                </form>
+              </article>
+            </section>
+          </div>
+        </section>
+
+        <section id="mfa-screen" class="screen">
+          <div class="auth-layout">
+            <section class="brand-panel">
+              <p class="brand-top">SHERWOOD</p>
+              <h2 class="brand-title">2차 인증</h2>
+              <p class="brand-subtitle">외부망 접속은 MFA를 통과해야 진행됩니다. 현재 시연에서는 데모 OTP를 사용합니다.</p>
+            </section>
+            <section class="auth-side">
+              <article class="auth-card">
+                <div class="topline">
+                  <span class="status-badge ok">MFA Required</span>
+                </div>
+                <h2 class="card-title">OTP 확인</h2>
+                <p class="card-copy">서버 API: <code>POST /api/v1/auth/mfa/verify</code></p>
+                <form id="mfa-form">
+                  <div class="field">
+                    <label for="otp-code">OTP 코드</label>
+                    <input id="otp-code" class="text-field" value="123456" />
+                  </div>
+                  <div id="mfa-feedback" class="message info">현재 데모 OTP는 123456 입니다.</div>
+                  <div class="button-row">
+                    <button class="primary-button" type="submit">인증</button>
+                    <button id="back-to-login" class="secondary-button" type="button">다시 로그인</button>
+                  </div>
+                </form>
+              </article>
+            </section>
+          </div>
+        </section>
+
+        <section id="dashboard-screen" class="screen">
+          <div class="dashboard-shell">
+            <header class="top-bar">
+              <div>
+                <h2 class="dashboard-title">운영 대시보드</h2>
+                <p id="session-user" class="dashboard-copy">로그인 사용자 정보를 불러오는 중입니다.</p>
+              </div>
+              <div class="button-row">
+                <button id="refresh-session" class="ghost-button" type="button">세션 새로고침</button>
+                <button id="logout" class="secondary-button" type="button">로그아웃</button>
+              </div>
+            </header>
+
+            <section class="info-grid">
+              <article class="info-card">
+                <p class="eyebrow">오늘 수리 접수</p>
+                <p class="metric">42</p>
+                <p class="detail">현장 반입 18건, 회수 접수 7건</p>
+              </article>
+              <article class="info-card">
+                <p class="eyebrow">부품 판매 요청</p>
+                <p class="metric">34</p>
+                <p class="detail">당일 출고 요청 11건</p>
+              </article>
+              <article class="info-card">
+                <p class="eyebrow">재고 경고</p>
+                <p class="metric">6</p>
+                <p class="detail">고가 부품 4종, 소모품 2종</p>
+              </article>
+            </section>
+
+            <section class="panel-grid">
+              <article class="info-card">
+                <p class="eyebrow">최근 작업</p>
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>업무 번호</th>
+                      <th>구분</th>
+                      <th>상태</th>
+                      <th>담당자</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>R-2026-0312-019</td>
+                      <td>엔진 수리</td>
+                      <td>부품 대기</td>
+                      <td>정비 1팀</td>
+                    </tr>
+                    <tr>
+                      <td>S-2026-0312-041</td>
+                      <td>부품 판매</td>
+                      <td>출하 준비</td>
+                      <td>영업팀</td>
+                    </tr>
+                    <tr>
+                      <td>I-2026-0312-006</td>
+                      <td>재고 조정</td>
+                      <td>승인 필요</td>
+                      <td>창고 관리자</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </article>
+              <article class="info-card">
+                <p class="eyebrow">클라이언트 상태</p>
+                <div class="stack-list">
+                  <div class="stack-item"><span>배포 채널</span><span class="status-badge neutral">GitHub Releases</span></div>
+                  <div class="stack-item"><span>업데이트 정책</span><span class="status-badge ok">시작 시 확인</span></div>
+                  <div class="stack-item"><span>코드 서명</span><span class="status-badge warn">초기 무서명</span></div>
+                  <div class="stack-item"><span>연결 서버</span><span id="dashboard-server-url" class="status-badge neutral">-</span></div>
+                </div>
+              </article>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

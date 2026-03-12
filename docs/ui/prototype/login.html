@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ERP Login</title>
+    <link rel="stylesheet" href="./prototype.css" />
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="brand-panel">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="brand-title">(주)선진종합</h1>
+        <p class="brand-subtitle">
+          Engine Repair &amp; Parts Sales ERP. 수리 접수, 부품 판매, 재고, 출하, 청구 업무를 하나의 흐름으로 관리합니다.
+        </p>
+        <div class="brand-tags">
+          <span>Repair</span>
+          <span>Parts Sales</span>
+          <span>Inventory</span>
+        </div>
+      </section>
+      <section class="auth-side">
+        <article class="auth-card">
+          <div class="topline">
+            <span class="status-badge neutral">접속 인증서 필요</span>
+          </div>
+          <h2 class="card-title">계정 로그인</h2>
+          <p class="card-copy">API 가정: <code>POST /api/v1/auth/login</code></p>
+
+          <div class="field">
+            <label for="login-id">아이디</label>
+            <input id="login-id" class="text-field" value="sales.team" />
+          </div>
+
+          <div class="field">
+            <label for="login-password">비밀번호</label>
+            <input id="login-password" class="password-field" type="password" value="12345678" />
+          </div>
+
+          <div class="message info">접속 인증서 확인 후 외부 접속은 TOTP 2차 인증 단계로 이동합니다.</div>
+
+          <div class="button-row">
+            <a class="primary-button" href="./mfa.html">로그인</a>
+            <a class="secondary-button" href="./admin-login.html">관리자 로그인</a>
+          </div>
+
+          <div class="helper-links">
+            <span>도움말</span>
+            <span>보안 안내</span>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

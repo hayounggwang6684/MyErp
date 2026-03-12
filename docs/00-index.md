@@ -29,6 +29,8 @@
 ### 아키텍처와 보안
 
 - [x] 시스템 아키텍처 초안 작성
+- [x] 배포 및 저장 구조 문서 작성
+- [x] 데이터 모델 기초 설계 문서 작성
 - [x] 보안 운영 요약 문서 작성
 - [x] 로그인 인증 워크플로우 작성
 - [x] 사용자 관리 정책 초안 작성
@@ -58,6 +60,10 @@
 ## 빠른 시작
 
 - 전체 구조부터 보려면 [시스템 아키텍처](architecture/01-system-architecture.md)
+- 배포와 데이터 저장 구조를 보려면 [배포 및 저장 구조](architecture/02-deployment-and-storage-architecture.md), [데이터 모델 기초 설계](architecture/03-data-model-foundation.md)
+- 실제 서버 인터페이스를 보려면 [API 문서 지도](api/00-api-index.md)
+- UI 구조를 보려면 [UI 문서 지도](ui/00-ui-index.md)
+- 현재 기준 사용 환경은 Windows 설치형 Electron 클라이언트와 Mac mini 로컬 관리자 UI이다.
 - 로그인과 접근 통제를 보려면 [보안 운영 요약](security/01-security-operations-summary.md), [로그인 인증](security/02-login-authentication.md), [사용자 관리](security/03-user-management.md), [권한 모델](security/04-permission-model.md)
 - 실제 업무 흐름을 보려면 `업무 흐름 문서` 구역
 - 개발 절차를 보려면 [개발 워크플로우](01-development-workflow.md)
@@ -67,6 +73,26 @@
 ### 시스템 구조를 보고 싶을 때
 
 - [시스템 아키텍처](architecture/01-system-architecture.md)
+- [배포 및 저장 구조](architecture/02-deployment-and-storage-architecture.md)
+- [데이터 모델 기초 설계](architecture/03-data-model-foundation.md)
+
+### API를 보고 싶을 때
+
+- [API 문서 지도](api/00-api-index.md)
+- [인증 및 세션 API](api/01-auth-and-session-api.md)
+- [사용자 및 권한 API](api/02-user-and-permission-api.md)
+- [수리 API](api/03-repair-api.md)
+- [재고 API](api/04-inventory-api.md)
+- [영업, 주문, 출하, 청구 API](api/05-sales-order-invoice-api.md)
+- [파일 API](api/06-file-api.md)
+
+### UI를 보고 싶을 때
+
+- [UI 문서 지도](ui/00-ui-index.md)
+- [디자인 시스템](ui/01-design-system.md)
+- [로그인 및 MFA UI](ui/02-login-and-mfa-ui.md)
+- [대시보드 쉘 UI](ui/03-dashboard-shell-ui.md)
+- [관리자 로컬 UI 원칙](ui/04-admin-local-ui-principles.md)
 
 ### 로그인과 보안 정책을 보고 싶을 때
 
@@ -99,19 +125,23 @@
 ## 권장 읽기 순서
 
 1. [시스템 아키텍처](architecture/01-system-architecture.md)
-2. [보안 운영 요약](security/01-security-operations-summary.md)
-3. [로그인 인증](security/02-login-authentication.md)
-4. [사용자 관리](security/03-user-management.md)
-5. [권한 모델](security/04-permission-model.md)
-6. [보안 구현 우선순위](security/05-security-implementation-priority.md)
-7. [수리 접수 워크플로우](workflows/01-repair-intake-workflow.md)
-8. [수리 진행 워크플로우](workflows/02-repair-process-workflow.md)
-9. [견적 및 주문 워크플로우](workflows/03-quotation-order-workflow.md)
-10. [부품 판매 워크플로우](workflows/04-parts-sales-workflow.md)
-11. [재고 워크플로우](workflows/05-inventory-workflow.md)
-12. [출하 워크플로우](workflows/06-shipping-workflow.md)
-13. [청구서 워크플로우](workflows/07-invoice-workflow.md)
-14. [개발 워크플로우](01-development-workflow.md)
+2. [배포 및 저장 구조](architecture/02-deployment-and-storage-architecture.md)
+3. [데이터 모델 기초 설계](architecture/03-data-model-foundation.md)
+4. [API 문서 지도](api/00-api-index.md)
+5. [UI 문서 지도](ui/00-ui-index.md)
+6. [보안 운영 요약](security/01-security-operations-summary.md)
+7. [로그인 인증](security/02-login-authentication.md)
+8. [사용자 관리](security/03-user-management.md)
+9. [권한 모델](security/04-permission-model.md)
+10. [보안 구현 우선순위](security/05-security-implementation-priority.md)
+11. [수리 접수 워크플로우](workflows/01-repair-intake-workflow.md)
+12. [수리 진행 워크플로우](workflows/02-repair-process-workflow.md)
+13. [견적 및 주문 워크플로우](workflows/03-quotation-order-workflow.md)
+14. [부품 판매 워크플로우](workflows/04-parts-sales-workflow.md)
+15. [재고 워크플로우](workflows/05-inventory-workflow.md)
+16. [출하 워크플로우](workflows/06-shipping-workflow.md)
+17. [청구서 워크플로우](workflows/07-invoice-workflow.md)
+18. [개발 워크플로우](01-development-workflow.md)
 
 ## 문서 대시보드
 
@@ -120,6 +150,8 @@
 | 문서 | 설명 |
 | --- | --- |
 | [시스템 아키텍처](architecture/01-system-architecture.md) | ERP 전체 구조, 계층, 핵심 엔터티, 모듈 연결 기준 |
+| [배포 및 저장 구조](architecture/02-deployment-and-storage-architecture.md) | Mac mini 서버, Windows 설치형 클라이언트, GitHub Releases 배포, 파일 저장소, 백업 구조 |
+| [데이터 모델 기초 설계](architecture/03-data-model-foundation.md) | PostgreSQL 스키마 분리, 핵심 테이블 묶음, 재고 원장, 파일 메타데이터 기준 |
 
 ### 보안
 
@@ -149,6 +181,28 @@
 | --- | --- |
 | [개발 워크플로우](01-development-workflow.md) | 브랜치 전략, 테스트 절차, 문서 관리 기준 |
 
+### API
+
+| 문서 | 설명 |
+| --- | --- |
+| [API 문서 지도](api/00-api-index.md) | API 경계, 공통 응답 형식, 구현 우선순위 |
+| [인증 및 세션 API](api/01-auth-and-session-api.md) | 로그인, MFA, 세션 조회, 로그아웃, 재인증, 세션 강제 종료 |
+| [사용자 및 권한 API](api/02-user-and-permission-api.md) | 사용자 생성, 상태 변경, 역할 재설정, 예외 권한 요청과 승인 |
+| [수리 API](api/03-repair-api.md) | 수리 접수, 진단, 작업 지시, 부품 사용, 완료 처리 |
+| [재고 API](api/04-inventory-api.md) | 현재고, 원장 조회, 입고, 출고, 이동, 조정 |
+| [영업, 주문, 출하, 청구 API](api/05-sales-order-invoice-api.md) | 견적, 주문, 판매, 출하, 청구 처리 |
+| [파일 API](api/06-file-api.md) | 파일 업로드, 메타데이터 조회, 다운로드, 엔터티 연결 |
+
+### UI
+
+| 문서 | 설명 |
+| --- | --- |
+| [UI 문서 지도](ui/00-ui-index.md) | Electron 클라이언트 UI 설계 원칙, 읽기 순서, 구현 우선순위 |
+| [디자인 시스템](ui/01-design-system.md) | 브랜드 컬러, 공통 버튼/입력/테이블/배지 규칙 |
+| [로그인 및 MFA UI](ui/02-login-and-mfa-ui.md) | 로그인, TOTP MFA, 오류, 세션 만료, 관리자 로그인 변형 |
+| [대시보드 쉘 UI](ui/03-dashboard-shell-ui.md) | 로그인 후 첫 대시보드, 메뉴, 요약 카드, 최근 작업 표 |
+| [관리자 로컬 UI 원칙](ui/04-admin-local-ui-principles.md) | 관리자 로컬 전용 표시, 공통 컴포넌트 재사용, 민감 기능 패턴 |
+
 ### 구현 구조
 
 | 문서 | 설명 |
@@ -167,6 +221,8 @@
 ### 처음 구조를 잡을 때
 
 [시스템 아키텍처](architecture/01-system-architecture.md)  
+-> [배포 및 저장 구조](architecture/02-deployment-and-storage-architecture.md)  
+-> [데이터 모델 기초 설계](architecture/03-data-model-foundation.md)  
 -> [보안 운영 요약](security/01-security-operations-summary.md)  
 -> [로그인 인증](security/02-login-authentication.md)  
 -> [권한 모델](security/04-permission-model.md)  
