@@ -10,7 +10,8 @@
     "build": "tsc --noEmit",
     "client:start": "electron .",
     "client:pack": "electron-builder --dir",
-    "client:dist": "electron-builder --win nsis"
+    "client:dist": "electron-builder --win nsis",
+    "client:release": "electron-builder --win nsis --publish always"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
@@ -27,9 +28,18 @@
   "build": {
     "appId": "com.sherwood.sunjin.erp",
     "productName": "Sunjin ERP",
+    "electronUpdaterCompatibility": ">=2.16",
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hayounggwang6684",
+        "repo": "MyErp",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "client/**/*",
       "src/web/assets/**/*",
