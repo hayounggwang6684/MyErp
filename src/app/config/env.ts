@@ -1,4 +1,5 @@
 const DEFAULT_PORT = 3000;
+const DEFAULT_HOST = "0.0.0.0";
 
 function parsePort(value: string | undefined): number {
   if (!value) {
@@ -11,6 +12,7 @@ function parsePort(value: string | undefined): number {
 
 export const env = {
   port: parsePort(process.env.PORT),
+  host: process.env.HOST || DEFAULT_HOST,
   sessionSecret: process.env.SESSION_SECRET || "change-me-for-production",
   databaseUrl: process.env.DATABASE_URL || "",
 } as const;

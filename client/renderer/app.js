@@ -1,7 +1,3 @@
-const state = {
-  currentScreen: "login",
-};
-
 const screens = {
   login: document.getElementById("login-screen"),
   mfa: document.getElementById("mfa-screen"),
@@ -14,59 +10,98 @@ const loginFeedback = document.getElementById("login-feedback");
 const mfaFeedback = document.getElementById("mfa-feedback");
 const updateStatus = document.getElementById("update-status");
 const sessionUser = document.getElementById("session-user");
-const dashboardServerUrl = document.getElementById("dashboard-server-url");
-const serverUrlInput = document.getElementById("server-url");
-const repoOwnerInput = document.getElementById("repo-owner");
-const repoNameInput = document.getElementById("repo-name");
+const autoLoginCheckbox = document.getElementById("auto-login");
+const dashboardAutoLogin = document.getElementById("dashboard-auto-login");
+const dashboardAccessScope = document.getElementById("dashboard-access-scope");
+const dashboardUpdateStatus = document.getElementById("dashboard-update-status");
 
 function setMessage(element, kind, message) {
   element.className = `message ${kind}`;
   element.textContent = message;
 }
 
+function setBadgeText(element, text, kind = "neutral") {
+  element.className = `status-badge ${kind}`;
+  element.textContent = text;
+}
+
 function showScreen(name) {
-  state.currentScreen = name;
   for (const [key, element] of Object.entries(screens)) {
     element.classList.toggle("active", key === name);
   }
 }
 
-async function loadConfig() {
-  const config = await window.erpClient.getConfig();
-  serverUrlInput.value = config.serverUrl || "";
-  repoOwnerInput.value = config.updateRepoOwner || "";
-  repoNameInput.value = config.updateRepoName || "";
-  dashboardServerUrl.textContent = config.serverUrl || "-";
+async function loadPreferences() {
+  const preferences = await window.erpClient.getPreference();
+  document.getElementById("login-id").value = preferences.rememberedUsername || "";
+  autoLoginCheckbox.checked = Boolean(preferences.autoLoginEnabled);
+  setBadgeText(
+    dashboardAutoLogin,
+    preferences.autoLoginEnabled ? "활성" : "비활성",
+    preferences.autoLoginEnabled ? "ok" : "neutral",
+  );
+  return preferences;
 }
 
 async function refreshSession() {
   try {
     const session = await window.erpClient.getSession();
     sessionUser.textContent = `${session.data.user.name} · ${session.data.roles.join(", ")}`;
+    setBadgeText(
+      dashboardAccessScope,
+      session.data.access_scope,
+      session.data.access_scope === "EXTERNAL" ? "warn" : "ok",
+    );
     showScreen("dashboard");
+    return true;
   } catch {
     showScreen("login");
+    return false;
   }
 }
 
-document.getElementById("save-config").addEventListener("click", async () => {
-  const config = await window.erpClient.saveConfig({
-    serverUrl: serverUrlInput.value.trim(),
-    updateRepoOwner: repoOwnerInput.value.trim(),
-    updateRepoName: repoNameInput.value.trim(),
-  });
-  dashboardServerUrl.textContent = config.serverUrl || "-";
-  setMessage(updateStatus, "info", "클라이언트 설정을 저장했습니다.");
-});
+async function attemptAutoLogin() {
+  const preferences = await window.erpClient.getPreference();
+  if (!preferences.autoLoginEnabled || !preferences.rememberedUsername) {
+    return false;
+  }
+
+  const hasSession = await refreshSession();
+  if (hasSession) {
+    setMessage(loginFeedback, "info", "최근 로그인 세션으로 자동 로그인되었습니다.");
+    return true;
+  }
+
+  document.getElementById("login-id").value = preferences.rememberedUsername;
+  setMessage(loginFeedback, "info", "최근 로그인 계정이 준비되었습니다.");
+  return false;
+}
 
 document.getElementById("check-updates").addEventListener("click", async () => {
   const result = await window.erpClient.checkForUpdates();
-  setMessage(updateStatus, result.status === "CHECK_FAILED" ? "warn" : "info", result.message);
+  const kind = result.status === "CHECK_FAILED" ? "warn" : "info";
+  setMessage(updateStatus, kind, result.message);
+  setBadgeText(
+    dashboardUpdateStatus,
+    result.status === "CHECK_FAILED" ? "실패" : result.status === "UP_TO_DATE" ? "최신" : "확인 중",
+    result.status === "CHECK_FAILED" ? "warn" : result.status === "UP_TO_DATE" ? "ok" : "neutral",
+  );
 });
 
 window.erpClient.onUpdateStatus((payload) => {
   const kind = payload.status === "CHECK_FAILED" ? "warn" : "info";
   setMessage(updateStatus, kind, payload.message);
+  setBadgeText(
+    dashboardUpdateStatus,
+    payload.status === "CHECK_FAILED"
+      ? "실패"
+      : payload.status === "UP_TO_DATE"
+        ? "최신"
+        : payload.status === "DOWNLOADING"
+          ? "다운로드 중"
+          : "확인 중",
+    payload.status === "CHECK_FAILED" ? "warn" : payload.status === "UP_TO_DATE" ? "ok" : "neutral",
+  );
 });
 
 loginForm.addEventListener("submit", async (event) => {
@@ -74,8 +109,25 @@ loginForm.addEventListener("submit", async (event) => {
   const payload = Object.fromEntries(new FormData(loginForm).entries());
 
   try {
-    await window.erpClient.login(payload);
-    setMessage(loginFeedback, "info", "1차 인증 성공. MFA 화면으로 이동합니다.");
+    const result = await window.erpClient.login(payload);
+    await window.erpClient.savePreference({
+      rememberedUsername: autoLoginCheckbox.checked ? String(payload.username || "") : "",
+      autoLoginEnabled: Boolean(autoLoginCheckbox.checked) && result.data.access_scope === "INTERNAL",
+      lastLoginAt: autoLoginCheckbox.checked ? new Date().toISOString() : "",
+      accessScope: result.data.access_scope,
+    });
+    setBadgeText(
+      dashboardAutoLogin,
+      autoLoginCheckbox.checked && result.data.access_scope === "INTERNAL" ? "활성" : "비활성",
+      autoLoginCheckbox.checked && result.data.access_scope === "INTERNAL" ? "ok" : "neutral",
+    );
+
+    if (result.data.login_status === "AUTHENTICATED") {
+      setMessage(loginFeedback, "info", "로그인되었습니다.");
+      await refreshSession();
+      return;
+    }
+
     showScreen("mfa");
   } catch (error) {
     setMessage(loginFeedback, "error", error.message || "로그인에 실패했습니다.");
@@ -89,7 +141,6 @@ mfaForm.addEventListener("submit", async (event) => {
     await window.erpClient.verifyMfa({
       otp_code: document.getElementById("otp-code").value.trim(),
     });
-    setMessage(mfaFeedback, "info", "2차 인증 성공. 대시보드로 이동합니다.");
     await refreshSession();
   } catch (error) {
     setMessage(mfaFeedback, "error", error.message || "2차 인증에 실패했습니다.");
@@ -106,7 +157,17 @@ document.getElementById("refresh-session").addEventListener("click", async () =>
 
 document.getElementById("logout").addEventListener("click", async () => {
   await window.erpClient.logout();
+  await loadPreferences();
+  setMessage(loginFeedback, "info", "로그아웃되었습니다.");
   showScreen("login");
 });
 
-loadConfig().then(refreshSession);
+loadPreferences()
+  .then(attemptAutoLogin)
+  .then((autoLoggedIn) => {
+    if (!autoLoggedIn) {
+      return refreshSession();
+    }
+
+    return true;
+  });

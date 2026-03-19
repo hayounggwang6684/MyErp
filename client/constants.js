@@ -1,5 +1,5 @@
 module.exports = {
-  serverUrl: "http://127.0.0.1:3000",
+  serverUrl: "http://192.168.0.9:3000",
   updateRepoOwner: "hayounggwang6684",
   updateRepoName: "MyErp",
 };

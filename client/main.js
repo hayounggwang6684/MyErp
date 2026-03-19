@@ -1,40 +1,74 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
-
-const defaultConfig = {
-  serverUrl: "http://127.0.0.1:3000",
-  updateRepoOwner: "",
-  updateRepoName: "",
-};
+const { autoUpdater } = require("electron-updater");
+const clientConstants = require("./constants");
 
 let mainWindow = null;
 let sessionCookie = "";
+const defaultPreferences = {
+  rememberedUsername: "",
+  autoLoginEnabled: false,
+  lastLoginAt: "",
+  accessScope: "EXTERNAL",
+};
 
-function getConfigPath() {
-  return path.join(app.getPath("userData"), "client-config.json");
+function getPreferencePath() {
+  return path.join(app.getPath("userData"), "client-preferences.json");
 }
 
-function readConfig() {
-  const configPath = getConfigPath();
+function getSessionPath() {
+  return path.join(app.getPath("userData"), "client-session.json");
+}
 
-  if (!fs.existsSync(configPath)) {
-    return { ...defaultConfig };
-  }
-
+function readJsonFile(filePath, fallbackValue) {
   try {
-    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    return { ...defaultConfig, ...parsed };
+    if (!fs.existsSync(filePath)) {
+      return fallbackValue;
+    }
+
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch {
-    return { ...defaultConfig };
+    return fallbackValue;
   }
 }
 
-function writeConfig(nextConfig) {
-  const configPath = getConfigPath();
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(nextConfig, null, 2));
-  return nextConfig;
+function writeJsonFile(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+}
+
+function readPreferences() {
+  return {
+    ...defaultPreferences,
+    ...readJsonFile(getPreferencePath(), defaultPreferences),
+  };
+}
+
+function writePreferences(nextPreferences) {
+  const mergedPreferences = {
+    ...defaultPreferences,
+    ...nextPreferences,
+  };
+  writeJsonFile(getPreferencePath(), mergedPreferences);
+  return mergedPreferences;
+}
+
+function readPersistedSession() {
+  const persisted = readJsonFile(getSessionPath(), { cookie: "" });
+  return typeof persisted.cookie === "string" ? persisted.cookie : "";
+}
+
+function writePersistedSession(cookieValue) {
+  writeJsonFile(getSessionPath(), { cookie: cookieValue });
+}
+
+function clearPersistedSession() {
+  try {
+    fs.rmSync(getSessionPath(), { force: true });
+  } catch {
+    writePersistedSession("");
+  }
 }
 
 function normalizeBaseUrl(serverUrl) {
@@ -49,9 +83,18 @@ function parseSetCookie(headerValue) {
   return headerValue.split(";")[0];
 }
 
+function persistCurrentSessionIfAllowed() {
+  const preferences = readPreferences();
+  if (preferences.autoLoginEnabled && preferences.accessScope === "INTERNAL" && sessionCookie) {
+    writePersistedSession(sessionCookie);
+    return;
+  }
+
+  clearPersistedSession();
+}
+
 async function apiRequest(method, routePath, body) {
-  const config = readConfig();
-  const baseUrl = normalizeBaseUrl(config.serverUrl);
+  const baseUrl = normalizeBaseUrl(clientConstants.serverUrl);
 
   if (!baseUrl) {
     throw new Error("서버 URL이 설정되지 않았습니다.");
@@ -78,6 +121,7 @@ async function apiRequest(method, routePath, body) {
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     sessionCookie = parseSetCookie(setCookie);
+    persistCurrentSessionIfAllowed();
   }
 
   const contentType = response.headers.get("content-type") || "";
@@ -96,117 +140,89 @@ async function apiRequest(method, routePath, body) {
   return responseBody;
 }
 
-function compareVersions(currentVersion, nextVersion) {
-  const current = currentVersion.replace(/^v/, "").split(".").map(Number);
-  const next = nextVersion.replace(/^v/, "").split(".").map(Number);
-  const max = Math.max(current.length, next.length);
-
-  for (let index = 0; index < max; index += 1) {
-    const a = current[index] || 0;
-    const b = next[index] || 0;
-    if (a < b) {
-      return -1;
-    }
-    if (a > b) {
-      return 1;
-    }
-  }
-
-  return 0;
-}
-
-async function checkGithubRelease() {
-  const config = readConfig();
-  if (!config.updateRepoOwner || !config.updateRepoName) {
-    return {
-      configured: false,
-      status: "NOT_CONFIGURED",
-      message: "업데이트 저장소 정보가 아직 설정되지 않았습니다.",
-    };
-  }
-
-  const response = await fetch(
-    `https://api.github.com/repos/${config.updateRepoOwner}/${config.updateRepoName}/releases/latest`,
-    {
-      headers: {
-        "User-Agent": "sunjin-erp-client",
-        Accept: "application/vnd.github+json",
-      },
-    },
-  );
-
-  if (!response.ok) {
-    return {
-      configured: true,
-      status: "CHECK_FAILED",
-      message: "GitHub Releases 확인에 실패했습니다.",
-    };
-  }
-
-  const release = await response.json();
-  const latestVersion = String(release.tag_name || "").replace(/^v/, "");
-  const currentVersion = app.getVersion();
-
-  if (!latestVersion) {
-    return {
-      configured: true,
-      status: "CHECK_FAILED",
-      message: "최신 릴리즈 버전을 읽지 못했습니다.",
-    };
-  }
-
-  if (compareVersions(currentVersion, latestVersion) >= 0) {
-    return {
-      configured: true,
-      status: "UP_TO_DATE",
-      message: `현재 버전(${currentVersion})이 최신입니다.`,
-      currentVersion,
-      latestVersion,
-      releaseUrl: release.html_url,
-    };
-  }
-
-  return {
-    configured: true,
-    status: "UPDATE_AVAILABLE",
-    message: `새 버전 ${latestVersion} 이(가) 있습니다.`,
-    currentVersion,
-    latestVersion,
-    releaseUrl: release.html_url,
-  };
-}
-
-async function promptForUpdate() {
-  const result = await checkGithubRelease();
-
+function sendUpdateStatus(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("update-status", result);
+    mainWindow.webContents.send("update-status", payload);
   }
+}
 
-  if (result.status !== "UPDATE_AVAILABLE") {
-    return result;
-  }
+function registerAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
 
-  const prompt = await dialog.showMessageBox(mainWindow, {
-    type: "info",
-    buttons: ["나중에", "다운로드"],
-    defaultId: 1,
-    cancelId: 0,
-    title: "업데이트 확인",
-    message: `새 버전 ${result.latestVersion} 이(가) 있습니다.`,
-    detail: "GitHub Releases 페이지를 열어 설치 파일을 다운로드합니다.",
+  autoUpdater.on("checking-for-update", () => {
+    sendUpdateStatus({
+      status: "CHECKING",
+      message: "최신 업데이트를 확인하는 중입니다.",
+    });
   });
 
-  if (prompt.response === 1 && result.releaseUrl) {
-    await shell.openExternal(result.releaseUrl);
-    return {
-      ...result,
-      status: "UPDATE_OPENED",
-      message: "릴리즈 페이지를 열었습니다.",
+  autoUpdater.on("update-available", (info) => {
+    sendUpdateStatus({
+      status: "UPDATE_AVAILABLE",
+      message: `새 버전 ${info.version} 다운로드를 시작합니다.`,
+    });
+  });
+
+  autoUpdater.on("update-not-available", (info) => {
+    sendUpdateStatus({
+      status: "UP_TO_DATE",
+      message: `현재 버전(${app.getVersion()})이 최신입니다.`,
+      latestVersion: info.version,
+    });
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    sendUpdateStatus({
+      status: "DOWNLOADING",
+      message: `업데이트 다운로드 중 (${Math.round(progress.percent)}%)`,
+    });
+  });
+
+  autoUpdater.on("update-downloaded", async (info) => {
+    sendUpdateStatus({
+      status: "DOWNLOADED",
+      message: `새 버전 ${info.version} 다운로드가 완료되었습니다.`,
+    });
+
+    const prompt = await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      buttons: ["나중에", "지금 재시작"],
+      defaultId: 1,
+      cancelId: 0,
+      title: "업데이트 준비 완료",
+      message: `새 버전 ${info.version} 설치가 준비되었습니다.`,
+      detail: "지금 재시작하면 업데이트를 적용합니다.",
+    });
+
+    if (prompt.response === 1) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  autoUpdater.on("error", (error) => {
+    sendUpdateStatus({
+      status: "CHECK_FAILED",
+      message: `업데이트 확인에 실패했습니다: ${error == null ? "unknown" : error.message}`,
+    });
+  });
+}
+
+async function checkForUpdates() {
+  if (!app.isPackaged) {
+    const status = {
+      status: "DEV_MODE",
+      message: "개발 모드에서는 자동 업데이트가 비활성화됩니다. 패키징된 앱에서 동작합니다.",
     };
+    sendUpdateStatus(status);
+    return status;
   }
 
-  return result;
+  await autoUpdater.checkForUpdates();
+  return {
+    status: "CHECKING",
+    message: "최신 업데이트를 확인하는 중입니다.",
+  };
 }
 
 function createWindow() {
@@ -225,22 +241,24 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, "renderer/index.html"));
   mainWindow.webContents.on("did-finish-load", () => {
-    promptForUpdate().catch(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("update-status", {
-          configured: true,
-          status: "CHECK_FAILED",
-          message: "앱 시작 시 업데이트 확인에 실패했습니다.",
-        });
-      }
+    sendUpdateStatus({
+      status: "READY",
+      message: "앱 시작 시 최신 릴리즈를 자동으로 확인합니다.",
+    });
+    checkForUpdates().catch(() => {
+      sendUpdateStatus({
+        status: "CHECK_FAILED",
+        message: "앱 시작 시 업데이트 확인에 실패했습니다.",
+      });
     });
   });
 }
 
-ipcMain.handle("config:get", () => readConfig());
-ipcMain.handle("config:save", (_event, nextPartial) => {
-  const nextConfig = { ...readConfig(), ...nextPartial };
-  return writeConfig(nextConfig);
+ipcMain.handle("preference:get", () => readPreferences());
+ipcMain.handle("preference:save", (_event, payload) => {
+  const nextPreferences = writePreferences(payload);
+  persistCurrentSessionIfAllowed();
+  return nextPreferences;
 });
 ipcMain.handle("auth:login", async (_event, payload) =>
   apiRequest("POST", "/api/v1/auth/login", payload),
@@ -251,12 +269,15 @@ ipcMain.handle("auth:verify-mfa", async (_event, payload) =>
 ipcMain.handle("auth:logout", async () => {
   const result = await apiRequest("POST", "/api/v1/auth/logout");
   sessionCookie = "";
+  clearPersistedSession();
   return result;
 });
 ipcMain.handle("session:get", async () => apiRequest("GET", "/api/v1/sessions/me"));
-ipcMain.handle("updates:check", async () => promptForUpdate());
+ipcMain.handle("updates:check", async () => checkForUpdates());
 
 app.whenReady().then(() => {
+  sessionCookie = readPersistedSession();
+  registerAutoUpdater();
   createWindow();
 
   app.on("activate", () => {

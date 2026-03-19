@@ -32,29 +32,17 @@ body {
 
 button, input { font: inherit; }
 
-.client-shell {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-}
-
-.settings-panel {
-  border-right: 1px solid var(--line-300);
-  background: rgba(255, 255, 255, 0.94);
-  padding: 28px 22px;
-}
-
 .panel-title, .brand-title, .dashboard-title {
   margin: 0;
   color: var(--brand-700);
 }
 
-.panel-copy, .brand-subtitle, .dashboard-copy {
+.brand-subtitle, .dashboard-copy {
   color: var(--ink-600);
   line-height: 1.6;
 }
 
-.settings-card, .auth-card, .info-card {
+.auth-card, .info-card {
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(212, 219, 230, 0.96);
   border-radius: var(--radius-xl);
@@ -62,7 +50,7 @@ button, input { font: inherit; }
   padding: 22px;
 }
 
-.field-label, .field label {
+.field label {
   display: block;
   margin: 12px 0 8px;
   color: var(--ink-700);
@@ -173,10 +161,19 @@ button, input { font: inherit; }
   font-size: 28px;
 }
 
-.card-copy {
-  margin: 0 0 18px;
-  color: var(--ink-500);
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 4px;
+  color: var(--ink-700);
   font-size: 14px;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
 }
 
 .dashboard-shell { padding: 28px; }
@@ -246,7 +243,6 @@ button, input { font: inherit; }
 }
 
 @media (max-width: 1280px) {
-  .client-shell,
   .auth-layout,
   .info-grid,
   .panel-grid {
