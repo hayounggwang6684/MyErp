@@ -13,6 +13,7 @@
     "client:dist": "electron-builder --win nsis"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "express": "^4.21.2"
   },
   "devDependencies": {
