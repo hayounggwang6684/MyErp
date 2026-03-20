@@ -140,14 +140,14 @@ loginForm.addEventListener("submit", async (event) => {
     const result = await window.erpClient.login(payload);
     await window.erpClient.savePreference({
       rememberedUsername: autoLoginCheckbox.checked ? String(payload.username || "") : "",
-      autoLoginEnabled: Boolean(autoLoginCheckbox.checked) && result.data.access_scope === "INTERNAL",
+      autoLoginEnabled: Boolean(autoLoginCheckbox.checked),
       lastLoginAt: autoLoginCheckbox.checked ? new Date().toISOString() : "",
       accessScope: result.data.access_scope,
     });
     setBadgeText(
       dashboardAutoLogin,
-      autoLoginCheckbox.checked && result.data.access_scope === "INTERNAL" ? "활성" : "비활성",
-      autoLoginCheckbox.checked && result.data.access_scope === "INTERNAL" ? "ok" : "neutral",
+      autoLoginCheckbox.checked ? "활성" : "비활성",
+      autoLoginCheckbox.checked ? "ok" : "neutral",
     );
 
     if (result.data.login_status === "AUTHENTICATED") {

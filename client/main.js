@@ -85,7 +85,7 @@ function parseSetCookie(headerValue) {
 
 function persistCurrentSessionIfAllowed() {
   const preferences = readPreferences();
-  if (preferences.autoLoginEnabled && preferences.accessScope === "INTERNAL" && sessionCookie) {
+  if (preferences.autoLoginEnabled && sessionCookie) {
     writePersistedSession(sessionCookie);
     return;
   }
@@ -196,11 +196,11 @@ function registerAutoUpdater() {
       cancelId: 0,
       title: "업데이트 준비 완료",
       message: `새 버전 ${info.version} 설치가 준비되었습니다.`,
-      detail: "지금 재시작하면 업데이트를 적용합니다.",
+      detail: "지금 재시작하면 백그라운드로 업데이트를 적용합니다.",
     });
 
     if (prompt.response === 1) {
-      autoUpdater.quitAndInstall();
+      autoUpdater.quitAndInstall(true, true);
     }
   });
 
