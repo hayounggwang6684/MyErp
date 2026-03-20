@@ -50,6 +50,11 @@ button, input { font: inherit; }
   padding: 22px;
 }
 
+.enrollment-card {
+  width: 100%;
+  max-width: 440px;
+}
+
 .field label {
   display: block;
   margin: 12px 0 8px;
@@ -72,6 +77,21 @@ button, input { font: inherit; }
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 16px;
+}
+
+.qr-card {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 6px;
+}
+
+.qr-image {
+  width: 208px;
+  height: 208px;
+  border-radius: 18px;
+  border: 1px solid var(--line-300);
+  background: #fff;
+  padding: 12px;
 }
 
 .primary-button, .secondary-button, .ghost-button {

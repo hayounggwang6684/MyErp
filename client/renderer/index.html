@@ -73,6 +73,39 @@
         </div>
       </section>
 
+      <section id="mfa-enrollment-screen" class="screen">
+        <div class="auth-layout">
+          <section class="brand-panel">
+            <p class="brand-top">SHERWOOD</p>
+            <h2 class="brand-title">MFA 등록</h2>
+            <p class="brand-subtitle">외부망 접속 전용 TOTP MFA를 등록합니다. Authenticator 앱으로 QR을 스캔하거나 수동 키를 입력한 뒤 6자리 코드를 확인하세요.</p>
+          </section>
+          <section class="auth-side">
+            <article class="auth-card enrollment-card">
+              <h2 class="card-title">Authenticator 등록</h2>
+              <div class="qr-card">
+                <img id="enrollment-qr" class="qr-image" alt="MFA QR 코드" />
+              </div>
+              <div class="field">
+                <label for="enrollment-secret">수동 입력 키</label>
+                <input id="enrollment-secret" class="text-field" readonly />
+              </div>
+              <form id="mfa-enrollment-form">
+                <div class="field">
+                  <label for="enrollment-otp-code">앱에서 생성된 6자리 코드</label>
+                  <input id="enrollment-otp-code" class="text-field" />
+                </div>
+                <div id="mfa-enrollment-feedback" class="message info">QR을 등록한 뒤 앱에 표시된 6자리 코드를 입력하세요.</div>
+                <div class="button-row">
+                  <button class="primary-button" type="submit">등록 완료</button>
+                  <button id="restart-enrollment" class="secondary-button" type="button">다시 로그인</button>
+                </div>
+              </form>
+            </article>
+          </section>
+        </div>
+      </section>
+
       <section id="dashboard-screen" class="screen">
         <div class="dashboard-shell">
           <header class="top-bar">

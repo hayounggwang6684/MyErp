@@ -15,7 +15,7 @@
 
 ## 1. 목적
 
-이 문서는 로그인, MFA, 세션 발급, 세션 조회, 로그아웃, 재인증에 필요한 API를 정의한다.
+이 문서는 PostgreSQL 기반 로그인, TOTP MFA 등록 및 검증, 세션 발급, 세션 조회, 로그아웃에 필요한 API를 정의한다.
 
 ## 2. 경계
 
@@ -26,13 +26,13 @@
 
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
-| `POST` | `/api/v1/auth/login` | 서버가 전달한 인증서 검증 결과와 단말, 계정, 비밀번호를 기준으로 MFA 필요 여부 판단 |
+| `POST` | `/api/v1/auth/login` | 서버 컨텍스트와 계정 정보를 기준으로 즉시 로그인, MFA, MFA 등록 요구 여부 판단 |
 | `POST` | `/api/v1/auth/mfa/verify` | MFA 코드 검증 후 세션 발급 |
+| `POST` | `/api/v1/auth/mfa/enrollment/start` | MFA 셀프 등록용 secret과 QR 발급 |
+| `GET` | `/api/v1/auth/mfa/enrollment/status` | 현재 MFA 등록 상태 확인 |
+| `POST` | `/api/v1/auth/mfa/enrollment/verify` | MFA 등록 확인 후 세션 발급 |
 | `POST` | `/api/v1/auth/logout` | 현재 세션 종료 |
 | `GET` | `/api/v1/sessions/me` | 현재 세션 정보 조회 |
-| `POST` | `/api/v1/auth/reauth` | 민감 기능 진입 전 재인증 |
-| `GET` | `/admin-api/v1/sessions` | 관리자 세션 목록 조회 |
-| `POST` | `/admin-api/v1/sessions/{sessionId}/revoke` | 특정 세션 강제 종료 |
 
 ## 4. 상세 계약
 
@@ -40,9 +40,9 @@
 
 설명:
 
-- 서버가 TLS 계층에서 전달받은 인증서 검증 결과, 단말 승인 여부, 사용자 상태, 비밀번호를 검증한다.
-- MFA 필요 시 임시 챌린지 토큰을 반환한다.
-- MFA 불필요 정책이라면 바로 세션을 발급할 수 있지만 현재 설계에서는 외부망 MFA를 기본으로 본다.
+- 서버가 TLS 계층에서 전달받은 인증서 검증 결과, 접속 위치, 사용자 상태, 비밀번호를 검증한다.
+- 내부망은 바로 세션을 발급할 수 있다.
+- 외부망은 활성 MFA가 있으면 `MFA_REQUIRED`, 없으면 `MFA_ENROLLMENT_REQUIRED`를 반환한다.
 
 요청 예시:
 
@@ -71,10 +71,11 @@
 {
   "success": true,
   "data": {
-    "login_status": "MFA_REQUIRED",
+    "login_status": "MFA_ENROLLMENT_REQUIRED",
     "mfa_challenge_id": "mfa_ch_123",
     "account_status": "ACTIVE",
-    "access_scope": "EXTERNAL"
+    "access_scope": "EXTERNAL",
+    "pending_session_id": "sess_pending_123"
   }
 }
 ```
@@ -88,6 +89,12 @@
 - `ACCOUNT_LOCKED`
 - `ACCOUNT_INACTIVE`
 - `UNAUTHENTICATED`
+
+가능한 `login_status`:
+
+- `AUTHENTICATED`
+- `MFA_REQUIRED`
+- `MFA_ENROLLMENT_REQUIRED`
 
 ### 4.2 `POST /api/v1/auth/mfa/verify`
 
@@ -138,72 +145,44 @@
 - `issued_at`
 - `expires_at`
 
-### 4.4 `POST /api/v1/auth/logout`
+### 4.4 `POST /api/v1/auth/mfa/enrollment/start`
+
+설명:
+
+- 외부망 로그인 후 MFA 미등록 사용자가 호출한다.
+- 서버가 `otpauth` URI와 QR 이미지 데이터 URL, 수동 입력용 base32 secret을 반환한다.
+
+### 4.5 `GET /api/v1/auth/mfa/enrollment/status`
+
+설명:
+
+- 현재 로그인 흐름에서 MFA 등록이 필요한지 확인한다.
+
+### 4.6 `POST /api/v1/auth/mfa/enrollment/verify`
+
+설명:
+
+- 사용자가 Authenticator 앱에 등록한 뒤 6자리 TOTP 코드를 제출한다.
+- 성공 시 MFA secret을 `ACTIVE`로 전환하고 바로 로그인 세션을 발급한다.
+
+### 4.7 `POST /api/v1/auth/logout`
 
 설명:
 
 - 현재 세션을 즉시 만료 처리한다.
 - 감사 로그를 남긴다.
 
-### 4.5 `POST /api/v1/auth/reauth`
-
-설명:
-
-- 권한 변경, 승인 처리, 대량 데이터 작업, 감사 로그 조회 같은 민감 기능 전에 호출한다.
-
-요청 예시:
-
-```json
-{
-  "password": "plain-text-or-client-protected",
-  "otp_code": "123456",
-  "target_action": "APPROVE_PRICE_EXCEPTION"
-}
-```
-
-응답 필드:
-
-- `reauth_token`
-- `valid_until`
-- `target_action`
-
-### 4.6 `GET /admin-api/v1/sessions`
-
-권한:
-
-- 시스템 관리자 전용
-- Mac mini 로컬 접속 전용
-
-조회 필터:
-
-- `user_id`
-- `account_status`
-- `access_scope`
-- `active_only`
-
-### 4.7 `POST /admin-api/v1/sessions/{sessionId}/revoke`
-
-설명:
-
-- 인증서 폐기, 계정 비활성, 보안 사고 대응 시 사용한다.
-
-요청 예시:
-
-```json
-{
-  "reason": "CERTIFICATE_REVOKED"
-}
-```
-
 ## 5. 보안 규칙
 
 - 외부망 로그인은 MFA 성공 전까지 세션을 발급하지 않는다.
+- 외부망 로그인은 MFA 등록이 없으면 등록 완료 전까지 세션을 발급하지 않는다.
 - 세션은 인증서 또는 단말에 바인딩한다.
 - 인증서 정보와 접속 IP는 요청 바디가 아니라 서버 컨텍스트를 기준으로 처리한다.
 - 계정 상태가 `승인대기`, `잠금`, `비활성`이면 로그인 차단한다.
+- 비밀번호 5회 실패 시 계정을 잠근다.
 - 로그인 성공, 실패, 잠금, 세션 종료는 모두 감사 로그 대상이다.
 
 ## 6. 구현 메모
 
-- 모듈 후보: `src/modules/auth`, `src/modules/sessions`, `src/modules/audit`
-- 우선 구현 순서: `login -> mfa verify -> sessions/me -> logout -> reauth -> admin revoke`
+- 구현 모듈: `src/modules/auth`, `src/modules/sessions`, `src/modules/users`, `src/modules/audit`
+- 저장소: `identity.users`, `identity.user_mfa_secrets`, `security.sessions`, `security.mfa_challenges`, `audit.auth_events`

@@ -112,6 +112,10 @@ async function apiRequest(method, routePath, body) {
     headers["x-demo-mtls-verified"] = "true";
   }
 
+  if (clientConstants.forceAccessScopeForTesting) {
+    headers["x-demo-force-access-scope"] = clientConstants.forceAccessScopeForTesting;
+  }
+
   const response = await fetch(`${baseUrl}${routePath}`, {
     method,
     headers,
@@ -265,6 +269,15 @@ ipcMain.handle("auth:login", async (_event, payload) =>
 );
 ipcMain.handle("auth:verify-mfa", async (_event, payload) =>
   apiRequest("POST", "/api/v1/auth/mfa/verify", payload),
+);
+ipcMain.handle("auth:mfa-enrollment:start", async () =>
+  apiRequest("POST", "/api/v1/auth/mfa/enrollment/start"),
+);
+ipcMain.handle("auth:mfa-enrollment:status", async () =>
+  apiRequest("GET", "/api/v1/auth/mfa/enrollment/status"),
+);
+ipcMain.handle("auth:mfa-enrollment:verify", async (_event, payload) =>
+  apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload),
 );
 ipcMain.handle("auth:logout", async () => {
   const result = await apiRequest("POST", "/api/v1/auth/logout");

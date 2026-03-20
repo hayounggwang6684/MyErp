@@ -1,4 +1,1 @@
-export const auditModule = {
-  name: "audit",
-  status: "draft",
-};
+export { auditService } from "./audit.service.js";

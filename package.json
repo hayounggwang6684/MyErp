@@ -7,19 +7,27 @@
   "scripts": {
     "dev": "node --watch --import tsx src/app/server.ts",
     "start": "node --import tsx src/app/server.ts",
+    "start:db:local": "DATABASE_URL='postgres://glory_ai_sever@localhost:5432/sunjin_erp' node --import tsx src/app/server.ts",
     "build": "tsc --noEmit",
+    "db:migrate": "node --import tsx scripts/db/migrate.ts",
+    "db:seed": "node --import tsx scripts/db/seed.ts",
     "client:start": "electron .",
     "client:pack": "electron-builder --dir",
     "client:dist": "electron-builder --win nsis",
     "client:release": "electron-builder --win nsis --publish always"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "electron-updater": "^6.8.3",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "otplib": "^12.0.1",
+    "pg": "^8.16.3",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^24.6.1",
+    "@types/pg": "^8.18.0",
     "electron": "^36.2.1",
     "electron-builder": "^26.0.12",
     "tsx": "^4.20.6",

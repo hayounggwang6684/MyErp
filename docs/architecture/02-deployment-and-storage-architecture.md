@@ -28,6 +28,7 @@
 - 주 데이터 저장소는 PostgreSQL을 사용한다.
 - 첨부 파일은 DB BLOB이 아니라 서버 로컬 파일 저장소에 보관한다.
 - Windows 클라이언트 설치 파일과 버전 배포는 GitHub Releases를 사용한다.
+- 서버 코드는 Mac mini에서 직접 업데이트하고, 클라이언트는 GitHub Releases로 업데이트한다.
 
 ## 3. 물리 배치 개요
 
@@ -77,6 +78,19 @@ BK --> SNAP[백업 저장 영역]
 - `backup worker`
   - DB dump, WAL 보관, 파일 증분 백업, 로그 순환을 수행한다.
 
+### 4.4 서버 실행 방식
+
+- 현재 운영 기준 서버 실행 명령은 아래와 같다.
+
+```bash
+cd "/Users/glory_ai_sever/Desktop/erp porject"
+npm run start:db:local
+```
+
+- 이 명령은 로컬 PostgreSQL `sunjin_erp` DB를 사용하는 개발/초기 운영 기준 실행 방식이다.
+- 현재 단계에서는 Mac mini 운영자가 직접 재시작한다.
+- 향후 운영 안정화 단계에서는 `pm2` 또는 `launchd` 기반 상시 서비스로 전환한다.
+
 ## 5. 접근 경로 분리 원칙
 
 ### 5.1 관리자 경로
@@ -107,8 +121,23 @@ BK --> SNAP[백업 저장 영역]
 
 - Windows 설치 파일은 GitHub Releases 아티팩트로 배포한다.
 - 클라이언트는 앱 시작 시 GitHub Releases 최신 버전을 확인한다.
-- 새 버전이 있으면 사용자 승인 후 릴리즈 페이지 또는 다운로드 경로로 이동한다.
+- 새 버전이 있으면 자동 다운로드 후 재시작 시 적용하는 구조를 목표로 한다.
 - 초기 배포는 무서명 내부 테스트용으로 시작하며 SmartScreen 경고 가능성을 운영 절차에 포함한다.
+
+### 5.4 서버 패치 경로
+
+- 서버 패치는 Mac mini에서 직접 수행한다.
+- 일반적인 패치 순서는 아래와 같다.
+
+```bash
+git pull origin main
+npm install
+npm run db:migrate
+npm run start:db:local
+```
+
+- 서버 패치는 항상 클라이언트 릴리즈보다 먼저 수행한다.
+- DB 스키마 변경이 포함된 버전은 `db:migrate`를 건너뛰지 않는다.
 
 ## 6. 저장소 디렉터리 구조
 
@@ -212,6 +241,8 @@ invoice/2026/03/invoice-502/file-122-v2.pdf
 - PostgreSQL과 파일 저장소가 외부 직접 접근에서 차단되는가
 - 업로드 임시 영역과 격리 영역이 분리되는가
 - DB와 파일을 함께 복구할 수 있는 백업 체계가 준비되는가
+- 서버 패치가 Mac mini에서 수동 반영되고 있는가
+- 클라이언트 릴리즈 자산(`.exe`, `latest.yml`, blockmap)이 GitHub Releases에 함께 게시되는가
 - GitHub Releases 설치 파일과 현재 운영 버전이 일치하는가
 
 ## 11. 향후 보완 항목

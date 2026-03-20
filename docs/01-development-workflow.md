@@ -151,7 +151,31 @@ git pull
 
 ---
 
-### Step 7. main 브랜치 병합
+### Step 7. 서버 반영 검증
+
+Mac mini 서버 반영 전에는 아래 순서로 점검한다.
+
+```bash
+git pull origin main
+npm install
+npm run db:migrate
+npm run start:db:local
+```
+
+검증 항목:
+
+- 서버가 PostgreSQL 연결 상태로 정상 기동되는가
+- 로그인, MFA 등록, MFA 검증 API가 정상 동작하는가
+- 기존 Windows 클라이언트가 새 서버와 호환되는가
+
+원칙:
+
+- 서버 패치는 항상 클라이언트 배포보다 먼저 진행한다.
+- DB 스키마 변경이 있는 버전은 `npm run db:migrate`를 반드시 먼저 수행한다.
+
+---
+
+### Step 8. main 브랜치 병합
 
 테스트 PC에서 정상 작동이 확인되면 main 브랜치에 병합한다.
 
@@ -160,6 +184,26 @@ git checkout main
 git merge codex/<feature-name>
 git push origin main
 ```
+
+---
+
+### Step 9. 클라이언트 릴리즈 게시
+
+main 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트를 새 버전으로 배포한다.
+
+클라이언트 배포 순서:
+
+1. Windows 빌드 PC에서 최신 `main` 가져오기
+2. `npm install`
+3. `npm run client:dist` 또는 `npm run client:release`
+4. 생성된 설치 파일, `latest.yml`, 관련 blockmap 파일을 GitHub Releases에 게시
+5. 설치된 클라이언트가 앱 시작 시 새 릴리즈를 감지하는지 확인
+
+원칙:
+
+- 서버를 먼저 배포하고 클라이언트를 나중에 배포한다.
+- 클라이언트 자동 업데이트는 GitHub Releases 자산이 업로드되어야 동작한다.
+- 무서명 빌드는 SmartScreen 또는 백신 오탐 가능성을 포함해 테스트한다.
 
 ---
 
@@ -188,6 +232,12 @@ git push origin main
 
 테스트 PC는 **최종 실행 환경 검증 용도**이다.
 설치형 클라이언트 기준으로는 로그인 화면, MFA 화면, 대시보드 진입 여부와 업데이트 확인 동작을 우선 검증한다.
+
+추가 정책:
+
+- 같은 공유기 또는 같은 사설 IP 대역 환경은 기본적으로 내부망으로 본다.
+- 외부망 MFA 검증은 핫스팟 또는 실제 외부 네트워크에서 확인한다.
+- 내부망 자동 로그인과 외부망 MFA는 분리해서 검증한다.
 
 ---
 
@@ -218,7 +268,35 @@ docs/
 
 ---
 
-## 8. 향후 확장 계획
+## 8. 운영 반영 절차
+
+### 8.1 서버 운영 반영
+
+현재 서버는 Mac mini에서 아래 명령으로 PostgreSQL 연결 상태로 실행한다.
+
+```bash
+cd "/Users/glory_ai_sever/Desktop/erp porject"
+npm run start:db:local
+```
+
+현재 단계 원칙:
+
+- 서버는 설치형 패키지로 배포하지 않는다.
+- Mac mini에서 코드 업데이트 후 재시작하는 방식으로 운영한다.
+
+향후 운영 고정 단계:
+
+- `pm2` 또는 `launchd` 기반 상시 서비스로 전환한다.
+
+### 8.2 클라이언트 운영 반영
+
+- 클라이언트는 GitHub Releases로 배포한다.
+- 사용자는 설치형 앱에서 자동 업데이트를 통해 새 버전을 받는다.
+- 서버 URL과 GitHub 저장소 정보는 클라이언트 내부 설정으로 고정하고 사용자 입력 UI는 노출하지 않는다.
+
+---
+
+## 9. 향후 확장 계획
 
 프로젝트 안정화 이후 다음 기능을 추가할 수 있다.
 

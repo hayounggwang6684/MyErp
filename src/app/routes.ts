@@ -8,7 +8,7 @@ import { getCookieValue } from "../shared/utils/cookies.js";
 const authCookieName = "erp_demo_session";
 const staticAssetRoot = path.resolve(process.cwd(), "src/web/assets");
 
-function getSessionFromRequest(request: Request) {
+async function getSessionFromRequest(request: Request) {
   const sessionId = getCookieValue(request.headers.cookie, authCookieName);
   if (!sessionId) {
     return null;
@@ -28,8 +28,8 @@ export function registerRoutes(app: Express) {
     response.redirect("/login");
   });
 
-  app.get("/login", (request, response) => {
-    const session = getSessionFromRequest(request);
+  app.get("/login", async (request, response) => {
+    const session = await getSessionFromRequest(request);
     if (session) {
       response.redirect("/dashboard");
       return;
@@ -40,14 +40,12 @@ export function registerRoutes(app: Express) {
       STATUS_BADGE_CLASS: "ok",
       STATUS_BADGE_TEXT: "접속 인증서 확인 완료",
       FEEDBACK_CLASS: "info",
-      FEEDBACK_MESSAGE: "기본 사용자 계정은 ha / 1234 이고, OTP는 123456 입니다.",
+      FEEDBACK_MESSAGE: "PostgreSQL과 TOTP MFA 기준 로그인 화면입니다.",
     });
   });
 
-  app.get("/mfa/verify", (request, response) => {
-    const pending = sessionService.getPendingChallenge(
-      getCookieValue(request.headers.cookie, authCookieName),
-    );
+  app.get("/mfa/verify", async (request, response) => {
+    const pending = await sessionService.getPendingChallenge(getCookieValue(request.headers.cookie, authCookieName));
 
     if (!pending) {
       response.redirect("/login");
@@ -57,12 +55,12 @@ export function registerRoutes(app: Express) {
     renderPage(response, "mfa.html", {
       PAGE_TITLE: "ERP MFA Verification",
       FEEDBACK_CLASS: "info",
-      FEEDBACK_MESSAGE: "Authenticator 앱 대신 데모 OTP 123456으로 검증합니다.",
+      FEEDBACK_MESSAGE: "Authenticator 앱 코드를 입력해 주세요.",
     });
   });
 
-  app.get("/dashboard", (request, response) => {
-    const session = getSessionFromRequest(request);
+  app.get("/dashboard", async (request, response) => {
+    const session = await getSessionFromRequest(request);
     if (!session) {
       response.redirect("/login");
       return;
@@ -87,6 +85,9 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/v1/auth/login", authController.login);
   app.post("/api/v1/auth/mfa/verify", authController.verifyMfa);
+  app.post("/api/v1/auth/mfa/enrollment/start", authController.startMfaEnrollment);
+  app.get("/api/v1/auth/mfa/enrollment/status", authController.getMfaEnrollmentStatus);
+  app.post("/api/v1/auth/mfa/enrollment/verify", authController.verifyMfaEnrollment);
   app.get("/api/v1/sessions/me", authController.getCurrentSession);
   app.post("/api/v1/auth/logout", authController.logout);
 }

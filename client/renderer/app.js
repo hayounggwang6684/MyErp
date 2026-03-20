@@ -1,19 +1,33 @@
 const screens = {
   login: document.getElementById("login-screen"),
   mfa: document.getElementById("mfa-screen"),
+  enrollment: document.getElementById("mfa-enrollment-screen"),
   dashboard: document.getElementById("dashboard-screen"),
 };
 
 const loginForm = document.getElementById("login-form");
 const mfaForm = document.getElementById("mfa-form");
+const enrollmentForm = document.getElementById("mfa-enrollment-form");
 const loginFeedback = document.getElementById("login-feedback");
 const mfaFeedback = document.getElementById("mfa-feedback");
+const enrollmentFeedback = document.getElementById("mfa-enrollment-feedback");
 const updateStatus = document.getElementById("update-status");
 const sessionUser = document.getElementById("session-user");
 const autoLoginCheckbox = document.getElementById("auto-login");
 const dashboardAutoLogin = document.getElementById("dashboard-auto-login");
 const dashboardAccessScope = document.getElementById("dashboard-access-scope");
 const dashboardUpdateStatus = document.getElementById("dashboard-update-status");
+const enrollmentQr = document.getElementById("enrollment-qr");
+const enrollmentSecret = document.getElementById("enrollment-secret");
+
+async function loadEnrollmentScreen() {
+  const enrollment = await window.erpClient.startMfaEnrollment();
+  enrollmentQr.src = enrollment.data.qr_code_data_url;
+  enrollmentSecret.value = enrollment.data.secret_base32;
+  document.getElementById("enrollment-otp-code").value = "";
+  setMessage(enrollmentFeedback, "info", `${enrollment.data.username} 계정의 MFA 등록을 진행합니다.`);
+  showScreen("enrollment");
+}
 
 function setMessage(element, kind, message) {
   element.className = `message ${kind}`;
@@ -128,6 +142,12 @@ loginForm.addEventListener("submit", async (event) => {
       return;
     }
 
+    if (result.data.login_status === "MFA_ENROLLMENT_REQUIRED") {
+      await loadEnrollmentScreen();
+      return;
+    }
+
+    setMessage(mfaFeedback, "info", "Authenticator 앱의 6자리 코드를 입력하세요.");
     showScreen("mfa");
   } catch (error) {
     setMessage(loginFeedback, "error", error.message || "로그인에 실패했습니다.");
@@ -147,7 +167,25 @@ mfaForm.addEventListener("submit", async (event) => {
   }
 });
 
+enrollmentForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    await window.erpClient.verifyMfaEnrollment({
+      otp_code: document.getElementById("enrollment-otp-code").value.trim(),
+    });
+    await refreshSession();
+  } catch (error) {
+    setMessage(enrollmentFeedback, "error", error.message || "MFA 등록 확인에 실패했습니다.");
+  }
+});
+
 document.getElementById("back-to-login").addEventListener("click", () => {
+  showScreen("login");
+});
+
+document.getElementById("restart-enrollment").addEventListener("click", async () => {
+  await window.erpClient.logout();
   showScreen("login");
 });
 

@@ -8,6 +8,7 @@ export type LoginInput = {
 export type SessionContext = {
   mtlsVerified: boolean;
   certificateFingerprint: string;
-  accessScope: "EXTERNAL" | "LOCAL_ADMIN";
+  accessScope: "INTERNAL" | "EXTERNAL" | "LOCAL_ADMIN";
   deviceId: string;
+  clientIp: string;
 };
