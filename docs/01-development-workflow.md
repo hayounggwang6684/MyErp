@@ -236,6 +236,12 @@ npm install
 npm run client:release
 ```
 
+GitHub Actions 자동 릴리즈:
+
+- `.github/workflows/client-release.yml`가 `v*` 태그 푸시를 감지해 Windows 빌드를 수행한다.
+- 생성된 `.exe`, `latest.yml`, `.blockmap`은 같은 태그의 GitHub Release에 자동 업로드된다.
+- 이미 만들어진 태그에 자산만 다시 올려야 할 때는 GitHub Actions의 `workflow_dispatch`로 `release_tag`를 지정해 수동 실행한다.
+
 GitHub Releases 확인 항목:
 
 - Windows 설치 파일 `.exe`
