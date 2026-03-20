@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { autoUpdater } = require("electron-updater");
@@ -236,12 +236,18 @@ function createWindow() {
     minWidth: 1200,
     minHeight: 760,
     backgroundColor: "#eef3f8",
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    mainWindow.removeMenu();
+  }
 
   mainWindow.loadFile(path.join(__dirname, "renderer/index.html"));
   mainWindow.webContents.on("did-finish-load", () => {
