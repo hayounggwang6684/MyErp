@@ -18,6 +18,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: client-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   build-windows-client:
     runs-on: windows-latest
@@ -58,4 +62,3 @@ jobs:
             release/*.exe
             release/*.yml
             release/*.blockmap
-

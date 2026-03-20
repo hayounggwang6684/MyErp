@@ -247,7 +247,7 @@ function createWindow() {
   mainWindow.webContents.on("did-finish-load", () => {
     sendUpdateStatus({
       status: "READY",
-      message: "앱 시작 시 최신 릴리즈를 자동으로 확인합니다.",
+      message: "앱 시작 시 최신 릴리즈를 자동으로 확인하고, 새 버전이 있으면 자동 다운로드 후 재시작 시 적용합니다.",
     });
     checkForUpdates().catch(() => {
       sendUpdateStatus({
