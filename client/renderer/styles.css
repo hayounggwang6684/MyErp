@@ -154,6 +154,13 @@ button, input { font: inherit; }
   margin-top: 24px;
 }
 
+.app-version {
+  margin: 22px 0 0;
+  color: var(--ink-500);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .brand-tags span, .status-badge {
   display: inline-flex;
   align-items: center;

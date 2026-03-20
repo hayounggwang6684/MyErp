@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("erpClient", {
+  getAppVersion: () => ipcRenderer.invoke("app:version"),
   login: (payload) => ipcRenderer.invoke("auth:login", payload),
   verifyMfa: (payload) => ipcRenderer.invoke("auth:verify-mfa", payload),
   startMfaEnrollment: () => ipcRenderer.invoke("auth:mfa-enrollment:start"),

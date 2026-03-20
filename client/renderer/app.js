@@ -14,11 +14,25 @@ const enrollmentFeedback = document.getElementById("mfa-enrollment-feedback");
 const updateStatus = document.getElementById("update-status");
 const sessionUser = document.getElementById("session-user");
 const autoLoginCheckbox = document.getElementById("auto-login");
+const loginAppVersion = document.getElementById("login-app-version");
+const dashboardAppVersion = document.getElementById("dashboard-app-version");
 const dashboardAutoLogin = document.getElementById("dashboard-auto-login");
 const dashboardAccessScope = document.getElementById("dashboard-access-scope");
 const dashboardUpdateStatus = document.getElementById("dashboard-update-status");
 const enrollmentQr = document.getElementById("enrollment-qr");
 const enrollmentSecret = document.getElementById("enrollment-secret");
+
+async function loadAppVersion() {
+  try {
+    const result = await window.erpClient.getAppVersion();
+    const label = `버전 ${result.version}`;
+    loginAppVersion.textContent = label;
+    setBadgeText(dashboardAppVersion, result.version, "neutral");
+  } catch {
+    loginAppVersion.textContent = "버전 확인 실패";
+    setBadgeText(dashboardAppVersion, "확인 실패", "warn");
+  }
+}
 
 async function loadEnrollmentScreen() {
   const enrollment = await window.erpClient.startMfaEnrollment();
@@ -201,6 +215,7 @@ document.getElementById("logout").addEventListener("click", async () => {
 });
 
 loadPreferences()
+  .then(() => loadAppVersion())
   .then(attemptAutoLogin)
   .then((autoLoggedIn) => {
     if (!autoLoggedIn) {

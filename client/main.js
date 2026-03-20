@@ -259,6 +259,9 @@ function createWindow() {
 }
 
 ipcMain.handle("preference:get", () => readPreferences());
+ipcMain.handle("app:version", () => ({
+  version: app.getVersion(),
+}));
 ipcMain.handle("preference:save", (_event, payload) => {
   const nextPreferences = writePreferences(payload);
   persistCurrentSessionIfAllowed();
