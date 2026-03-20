@@ -194,16 +194,62 @@ main 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트를 새
 클라이언트 배포 순서:
 
 1. Windows 빌드 PC에서 최신 `main` 가져오기
-2. `npm install`
-3. `npm run client:dist` 또는 `npm run client:release`
-4. 생성된 설치 파일, `latest.yml`, 관련 blockmap 파일을 GitHub Releases에 게시
-5. 설치된 클라이언트가 앱 시작 시 새 릴리즈를 감지하는지 확인
+2. `package.json`의 `version`을 다음 패치 버전으로 올리기
+3. `package-lock.json`의 상단 버전 정보도 함께 맞추기
+4. `npm install`
+5. 릴리즈용 커밋 생성
+6. `npm run client:dist` 또는 `npm run client:release`
+7. 생성된 설치 파일, `latest.yml`, 관련 blockmap 파일을 GitHub Releases에 게시
+8. 설치된 클라이언트가 앱 시작 시 새 릴리즈를 감지하는지 확인
 
 원칙:
 
 - 서버를 먼저 배포하고 클라이언트를 나중에 배포한다.
 - 클라이언트 자동 업데이트는 GitHub Releases 자산이 업로드되어야 동작한다.
 - 무서명 빌드는 SmartScreen 또는 백신 오탐 가능성을 포함해 테스트한다.
+
+클라이언트 패치 버전 기준:
+
+- UI 수정, 로그인 흐름 보완, 자동 업데이트 보완 같은 하위 호환 변경은 패치 버전으로 올린다.
+- 예: `0.1.0` -> `0.1.1`
+
+권장 릴리즈 절차 예시:
+
+```bash
+git checkout main
+git pull origin main
+npm install
+```
+
+그 다음 `package.json`, `package-lock.json` 버전을 함께 올린 뒤:
+
+```bash
+git add -A
+git commit -m "release: v0.1.1"
+git push origin main
+```
+
+Windows 빌드 PC에서:
+
+```bash
+npm install
+npm run client:release
+```
+
+GitHub Releases 확인 항목:
+
+- Windows 설치 파일 `.exe`
+- `latest.yml`
+- 관련 `.blockmap`
+
+자동 업데이트 검증 절차:
+
+1. 기존 버전 클라이언트 설치 상태 유지
+2. 새 버전 릴리즈 게시
+3. 클라이언트 실행
+4. 새 버전 감지 여부 확인
+5. 자동 다운로드 완료 여부 확인
+6. 재시작 후 새 버전 적용 여부 확인
 
 ---
 
