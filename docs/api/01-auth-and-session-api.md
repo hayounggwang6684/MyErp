@@ -33,6 +33,9 @@
 | `POST` | `/api/v1/auth/mfa/enrollment/verify` | MFA 등록 확인 후 세션 발급 |
 | `POST` | `/api/v1/auth/logout` | 현재 세션 종료 |
 | `GET` | `/api/v1/sessions/me` | 현재 세션 정보 조회 |
+| `GET` | `/api/v1/admin/users/security` | 관리자용 사용자 보안 상태 목록 조회 |
+| `POST` | `/api/v1/admin/users/:userId/unlock` | 관리자용 계정 잠금 해제 |
+| `POST` | `/api/v1/admin/users/:userId/reset-mfa` | 관리자용 MFA 재등록 초기화 |
 
 ## 4. 상세 계약
 
@@ -171,6 +174,27 @@
 
 - 현재 세션을 즉시 만료 처리한다.
 - 감사 로그를 남긴다.
+
+### 4.8 `GET /api/v1/admin/users/security`
+
+설명:
+
+- `SYSTEM_ADMIN` 역할 사용자만 호출할 수 있다.
+- 계정 잠금 상태, MFA 등록 여부, 최근 사용 시각, 실패 횟수를 함께 반환한다.
+
+### 4.9 `POST /api/v1/admin/users/:userId/unlock`
+
+설명:
+
+- `SYSTEM_ADMIN` 역할 사용자만 호출할 수 있다.
+- 잠긴 계정의 실패 횟수와 잠금 상태를 초기화한다.
+
+### 4.10 `POST /api/v1/admin/users/:userId/reset-mfa`
+
+설명:
+
+- `SYSTEM_ADMIN` 역할 사용자만 호출할 수 있다.
+- 해당 사용자의 활성 MFA secret을 폐기하고 다음 외부망 로그인 시 다시 등록하게 만든다.
 
 ## 5. 보안 규칙
 

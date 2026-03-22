@@ -47,6 +47,65 @@ function mapMfaSecret(row: {
 }
 
 export class UserService {
+  async listSecurityOverview(client?: DbExecutor) {
+    const executor: DbExecutor = client ?? { query };
+    const result = await executor.query<{
+      id: string;
+      username: string;
+      name: string;
+      roles: string[];
+      status: UserStatus;
+      failed_password_attempts: number;
+      locked_until: Date | null;
+      has_active_mfa: boolean;
+      active_mfa_verified_at: Date | null;
+      active_mfa_last_used_at: Date | null;
+    }>(
+      `select
+         u.id,
+         u.username,
+         u.name,
+         u.roles,
+         u.status,
+         u.failed_password_attempts,
+         u.locked_until,
+         exists(
+           select 1
+           from identity.user_mfa_secrets s
+           where s.user_id = u.id and s.status = 'ACTIVE'
+         ) as has_active_mfa,
+         (
+           select s.verified_at
+           from identity.user_mfa_secrets s
+           where s.user_id = u.id and s.status = 'ACTIVE'
+           order by s.created_at desc
+           limit 1
+         ) as active_mfa_verified_at,
+         (
+           select s.last_used_at
+           from identity.user_mfa_secrets s
+           where s.user_id = u.id and s.status = 'ACTIVE'
+           order by s.created_at desc
+           limit 1
+         ) as active_mfa_last_used_at
+       from identity.users u
+       order by u.username`,
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      username: row.username,
+      name: row.name,
+      roles: row.roles,
+      status: row.status,
+      failedPasswordAttempts: row.failed_password_attempts,
+      lockedUntil: row.locked_until?.toISOString() || null,
+      hasActiveMfa: row.has_active_mfa,
+      activeMfaVerifiedAt: row.active_mfa_verified_at?.toISOString() || null,
+      activeMfaLastUsedAt: row.active_mfa_last_used_at?.toISOString() || null,
+    }));
+  }
+
   async findByUsername(username: string, client?: DbExecutor) {
     const executor: DbExecutor = client ?? { query };
     const result = await executor.query<{
@@ -114,6 +173,19 @@ export class UserService {
     await executor.query(
       `update identity.users
        set failed_password_attempts = 0,
+           last_failed_password_at = null
+       where id = $1`,
+      [userId],
+    );
+  }
+
+  async unlockAccount(userId: string, client?: DbExecutor) {
+    const executor: DbExecutor = client ?? { query };
+    await executor.query(
+      `update identity.users
+       set status = 'ACTIVE',
+           failed_password_attempts = 0,
+           locked_until = null,
            last_failed_password_at = null
        where id = $1`,
       [userId],
@@ -210,6 +282,17 @@ export class UserService {
   async touchActiveMfaSecret(secretId: string, client?: DbExecutor) {
     const executor: DbExecutor = client ?? { query };
     await executor.query(`update identity.user_mfa_secrets set last_used_at = now() where id = $1`, [secretId]);
+  }
+
+  async revokeAllMfaSecrets(userId: string, client?: DbExecutor) {
+    const executor: DbExecutor = client ?? { query };
+    await executor.query(
+      `update identity.user_mfa_secrets
+       set status = 'REVOKED'
+       where user_id = $1
+         and status in ('PENDING', 'ACTIVE')`,
+      [userId],
+    );
   }
 }
 

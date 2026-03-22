@@ -184,6 +184,32 @@
               <div id="update-status" class="message info">앱 시작 시 최신 릴리즈를 자동으로 확인하고, 새 버전이 있으면 자동 다운로드 후 재시작 시 적용합니다.</div>
             </article>
           </section>
+
+          <section id="admin-security-panel" class="admin-security-panel hidden">
+            <article class="info-card">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">관리자 보안 관리</p>
+                  <h3 class="admin-panel-title">계정 잠금 해제 및 MFA 초기화</h3>
+                </div>
+                <button id="refresh-admin-users" class="ghost-button" type="button">목록 새로고침</button>
+              </div>
+              <div id="admin-security-feedback" class="message info">관리자 계정에서는 사용자 보안 상태를 확인하고 직접 복구할 수 있습니다.</div>
+              <table class="data-table admin-table">
+                <thead>
+                  <tr>
+                    <th>계정</th>
+                    <th>상태</th>
+                    <th>MFA</th>
+                    <th>실패 횟수</th>
+                    <th>최근 MFA 사용</th>
+                    <th>조치</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-users-table-body"></tbody>
+              </table>
+            </article>
+          </section>
         </div>
       </section>
     </main>

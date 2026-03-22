@@ -21,6 +21,20 @@ const dashboardAccessScope = document.getElementById("dashboard-access-scope");
 const dashboardUpdateStatus = document.getElementById("dashboard-update-status");
 const enrollmentQr = document.getElementById("enrollment-qr");
 const enrollmentSecret = document.getElementById("enrollment-secret");
+const adminSecurityPanel = document.getElementById("admin-security-panel");
+const adminSecurityFeedback = document.getElementById("admin-security-feedback");
+const adminUsersTableBody = document.getElementById("admin-users-table-body");
+const refreshAdminUsersButton = document.getElementById("refresh-admin-users");
+let currentSession = null;
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 async function loadAppVersion() {
   try {
@@ -74,17 +88,69 @@ async function loadPreferences() {
 async function refreshSession() {
   try {
     const session = await window.erpClient.getSession();
+    currentSession = session.data;
     sessionUser.textContent = `${session.data.user.name} · ${session.data.roles.join(", ")}`;
     setBadgeText(
       dashboardAccessScope,
       session.data.access_scope,
       session.data.access_scope === "EXTERNAL" ? "warn" : "ok",
     );
+    await refreshAdminPanel();
     showScreen("dashboard");
     return true;
   } catch {
+    currentSession = null;
+    adminSecurityPanel.classList.add("hidden");
     showScreen("login");
     return false;
+  }
+}
+
+async function refreshAdminPanel() {
+  const isAdmin = Array.isArray(currentSession?.roles) && currentSession.roles.includes("SYSTEM_ADMIN");
+  adminSecurityPanel.classList.toggle("hidden", !isAdmin);
+
+  if (!isAdmin) {
+    adminUsersTableBody.innerHTML = "";
+    return;
+  }
+
+  try {
+    const response = await window.erpClient.listAdminUsers();
+    adminUsersTableBody.innerHTML = response.data
+      .map((user) => {
+        const statusBadgeClass = user.status === "LOCKED" ? "warn" : "ok";
+        const mfaText = user.hasActiveMfa ? "활성" : "미등록";
+        const mfaBadgeClass = user.hasActiveMfa ? "ok" : "warn";
+        const lastUsedAt = user.activeMfaLastUsedAt
+          ? new Date(user.activeMfaLastUsedAt).toLocaleString("ko-KR")
+          : "-";
+
+        return `
+          <tr>
+            <td>
+              <strong>${escapeHtml(user.username)}</strong><br />
+              <span class="table-subtext">${escapeHtml(user.roles.join(", "))}</span>
+            </td>
+            <td><span class="status-badge ${statusBadgeClass}">${escapeHtml(user.status)}</span></td>
+            <td><span class="status-badge ${mfaBadgeClass}">${mfaText}</span></td>
+            <td>${escapeHtml(String(user.failedPasswordAttempts))}</td>
+            <td>${escapeHtml(lastUsedAt)}</td>
+            <td>
+              <div class="admin-actions">
+                <button class="ghost-button admin-action-button" data-action="unlock" data-user-id="${escapeHtml(user.id)}">잠금 해제</button>
+                <button class="ghost-button admin-action-button" data-action="reset-mfa" data-user-id="${escapeHtml(user.id)}">MFA 초기화</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    setMessage(adminSecurityFeedback, "info", "관리자 작업 대상 계정을 선택해 보안 상태를 복구할 수 있습니다.");
+  } catch (error) {
+    adminUsersTableBody.innerHTML = "";
+    setMessage(adminSecurityFeedback, "error", error.message || "관리자 사용자 목록을 불러오지 못했습니다.");
   }
 }
 
@@ -205,6 +271,39 @@ document.getElementById("restart-enrollment").addEventListener("click", async ()
 
 document.getElementById("refresh-session").addEventListener("click", async () => {
   await refreshSession();
+});
+
+refreshAdminUsersButton.addEventListener("click", async () => {
+  await refreshAdminPanel();
+});
+
+adminUsersTableBody.addEventListener("click", async (event) => {
+  const button = event.target instanceof HTMLElement ? event.target.closest("button[data-action]") : null;
+  if (!button) {
+    return;
+  }
+
+  const action = button.getAttribute("data-action");
+  const userId = button.getAttribute("data-user-id");
+  if (!action || !userId) {
+    return;
+  }
+
+  try {
+    if (action === "unlock") {
+      await window.erpClient.unlockAdminUser(userId);
+      setMessage(adminSecurityFeedback, "info", "계정 잠금을 해제했습니다.");
+    }
+
+    if (action === "reset-mfa") {
+      await window.erpClient.resetAdminUserMfa(userId);
+      setMessage(adminSecurityFeedback, "info", "사용자 MFA를 초기화했습니다. 다음 외부망 로그인 시 다시 등록하게 됩니다.");
+    }
+
+    await refreshAdminPanel();
+  } catch (error) {
+    setMessage(adminSecurityFeedback, "error", error.message || "관리자 작업에 실패했습니다.");
+  }
 });
 
 document.getElementById("logout").addEventListener("click", async () => {

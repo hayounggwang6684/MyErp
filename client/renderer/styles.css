@@ -190,6 +190,7 @@ button, input { font: inherit; }
 
 .screen { display: none; min-height: 100vh; }
 .screen.active { display: block; }
+.hidden { display: none !important; }
 
 .auth-layout {
   min-height: 100vh;
@@ -305,6 +306,23 @@ button, input { font: inherit; }
   margin-top: 16px;
 }
 
+.admin-security-panel {
+  margin-top: 16px;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.admin-panel-title {
+  margin: 0;
+  color: var(--ink-950);
+  font-size: 22px;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -333,6 +351,23 @@ button, input { font: inherit; }
   padding: 12px 14px;
   border-radius: 14px;
   background: var(--surface-50);
+}
+
+.admin-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-action-button {
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--surface-100);
+}
+
+.table-subtext {
+  color: var(--ink-500);
+  font-size: 12px;
 }
 
 @media (max-width: 1280px) {

@@ -10,7 +10,9 @@ export type AuthEventType =
   | "MFA_VERIFIED"
   | "MFA_ENROLLMENT_STARTED"
   | "MFA_ENROLLMENT_VERIFIED"
-  | "LOGOUT";
+  | "LOGOUT"
+  | "ADMIN_ACCOUNT_UNLOCKED"
+  | "ADMIN_MFA_RESET";
 
 export class AuditService {
   async recordAuthEvent(input: {

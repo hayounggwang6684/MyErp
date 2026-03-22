@@ -1,6 +1,7 @@
 import express, { type Express, type Request, type Response } from "express";
 import path from "node:path";
 import { authController } from "../modules/auth/index.js";
+import { adminSecurityController } from "../modules/admin/index.js";
 import { sessionService } from "../modules/sessions/index.js";
 import { renderTemplate } from "../shared/infrastructure/templates/render.js";
 import { getCookieValue } from "../shared/utils/cookies.js";
@@ -90,4 +91,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/v1/auth/mfa/enrollment/verify", authController.verifyMfaEnrollment);
   app.get("/api/v1/sessions/me", authController.getCurrentSession);
   app.post("/api/v1/auth/logout", authController.logout);
+  app.get("/api/v1/admin/users/security", adminSecurityController.listUsers);
+  app.post("/api/v1/admin/users/:userId/unlock", adminSecurityController.unlockUser);
+  app.post("/api/v1/admin/users/:userId/reset-mfa", adminSecurityController.resetUserMfa);
 }

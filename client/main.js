@@ -431,6 +431,13 @@ ipcMain.handle("auth:logout", async () => {
   return result;
 });
 ipcMain.handle("session:get", async () => apiRequest("GET", "/api/v1/sessions/me"));
+ipcMain.handle("admin:users:list", async () => apiRequest("GET", "/api/v1/admin/users/security"));
+ipcMain.handle("admin:users:unlock", async (_event, userId) =>
+  apiRequest("POST", `/api/v1/admin/users/${encodeURIComponent(String(userId))}/unlock`),
+);
+ipcMain.handle("admin:users:reset-mfa", async (_event, userId) =>
+  apiRequest("POST", `/api/v1/admin/users/${encodeURIComponent(String(userId))}/reset-mfa`),
+);
 ipcMain.handle("updates:check", async () => checkForUpdates());
 
 app.whenReady().then(() => {
