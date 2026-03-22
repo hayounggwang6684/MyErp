@@ -83,6 +83,21 @@ function parseSetCookie(headerValue) {
   return headerValue.split(";")[0];
 }
 
+function readSetCookieHeader(headers) {
+  if (!headers) {
+    return "";
+  }
+
+  if (typeof headers.getSetCookie === "function") {
+    const values = headers.getSetCookie();
+    if (Array.isArray(values) && values.length > 0) {
+      return values[0];
+    }
+  }
+
+  return headers.get("set-cookie") || "";
+}
+
 function persistCurrentSessionIfAllowed() {
   const preferences = readPreferences();
   if (preferences.autoLoginEnabled && sessionCookie) {
@@ -122,7 +137,7 @@ async function apiRequest(method, routePath, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const setCookie = response.headers.get("set-cookie");
+  const setCookie = readSetCookieHeader(response.headers);
   if (setCookie) {
     sessionCookie = parseSetCookie(setCookie);
     persistCurrentSessionIfAllowed();
