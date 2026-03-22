@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{PAGE_TITLE}}</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="side-nav">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="nav-title">관리자 보안</h1>
+        <p class="nav-copy">Mac mini 로컬 관리자 화면입니다. 일반 사용자 클라이언트에는 이 기능이 노출되지 않습니다.</p>
+        <div class="nav-section">
+          <a class="nav-link active" href="/admin/security">보안 관리</a>
+          <a class="nav-link" href="/admin/login">관리자 로그인</a>
+          <a class="nav-link" href="/login">일반 로그인</a>
+        </div>
+      </aside>
+
+      <section class="dashboard-main">
+        <header class="top-bar">
+          <div>
+            <h1>관리자 보안 관리</h1>
+            <p>{{ADMIN_NAME}} · {{ADMIN_ROLE}}</p>
+          </div>
+          <div class="button-row">
+            <button id="admin-refresh" class="ghost-button" type="button">목록 새로고침</button>
+            <button id="admin-logout" class="secondary-button" type="button">로그아웃</button>
+          </div>
+        </header>
+
+        <section class="panel-grid">
+          <article class="info-card">
+            <p class="eyebrow">계정 보안 목록</p>
+            <div id="admin-feedback" class="message info">사용자 보안 상태를 불러오는 중입니다.</div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>계정</th>
+                  <th>상태</th>
+                  <th>MFA</th>
+                  <th>실패 횟수</th>
+                  <th>최근 MFA 사용</th>
+                  <th>조치</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users-body"></tbody>
+            </table>
+          </article>
+
+          <article class="info-card">
+            <p class="eyebrow">운영 규칙</p>
+            <div class="stack-list">
+              <div class="stack-item"><span>접속 제한</span><span class="status-badge warn">LOCAL_ADMIN</span></div>
+              <div class="stack-item"><span>잠금 해제</span><span class="status-badge neutral">비밀번호 실패 초기화</span></div>
+              <div class="stack-item"><span>MFA 초기화</span><span class="status-badge neutral">다음 외부망 로그인 시 재등록</span></div>
+            </div>
+            <div class="message warn">관리자 보안 조치는 Mac mini 로컬 화면에서만 실행됩니다.</div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const feedback = document.getElementById("admin-feedback");
+      const body = document.getElementById("admin-users-body");
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function setMessage(kind, message) {
+        feedback.className = `message ${kind}`;
+        feedback.textContent = message;
+      }
+
+      async function loadUsers() {
+        const response = await fetch("/admin/api/v1/users/security");
+        const result = await response.json();
+
+        if (!response.ok) {
+          setMessage("error", result.message || "관리자 보안 목록을 불러오지 못했습니다.");
+          if (response.status === 403 || response.status === 401) {
+            window.location.href = "/admin/login";
+          }
+          return;
+        }
+
+        body.innerHTML = result.data.map((user) => {
+          const mfaText = user.hasActiveMfa ? "활성" : "미등록";
+          const mfaClass = user.hasActiveMfa ? "ok" : "warn";
+          const statusClass = user.status === "LOCKED" ? "warn" : "ok";
+          const lastUsedAt = user.activeMfaLastUsedAt
+            ? new Date(user.activeMfaLastUsedAt).toLocaleString("ko-KR")
+            : "-";
+
+          return `
+            <tr>
+              <td><strong>${escapeHtml(user.username)}</strong><br /><span class="muted-inline">${escapeHtml(user.roles.join(", "))}</span></td>
+              <td><span class="status-badge ${statusClass}">${escapeHtml(user.status)}</span></td>
+              <td><span class="status-badge ${mfaClass}">${mfaText}</span></td>
+              <td>${escapeHtml(String(user.failedPasswordAttempts))}</td>
+              <td>${escapeHtml(lastUsedAt)}</td>
+              <td>
+                <div class="admin-inline-actions">
+                  <button class="ghost-button compact-button" data-action="unlock" data-user-id="${escapeHtml(user.id)}">잠금 해제</button>
+                  <button class="ghost-button compact-button" data-action="reset-mfa" data-user-id="${escapeHtml(user.id)}">MFA 초기화</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+        setMessage("info", "사용자 계정 잠금과 MFA 상태를 여기서 복구할 수 있습니다.");
+      }
+
+      document.getElementById("admin-refresh").addEventListener("click", async () => {
+        await loadUsers();
+      });
+
+      document.getElementById("admin-logout").addEventListener("click", async () => {
+        await fetch("/admin/api/v1/auth/logout", { method: "POST" });
+        window.location.href = "/admin/login";
+      });
+
+      body.addEventListener("click", async (event) => {
+        const button = event.target instanceof HTMLElement ? event.target.closest("button[data-action]") : null;
+        if (!button) {
+          return;
+        }
+
+        const action = button.getAttribute("data-action");
+        const userId = button.getAttribute("data-user-id");
+        if (!action || !userId) {
+          return;
+        }
+
+        const route = action === "unlock"
+          ? `/admin/api/v1/users/${encodeURIComponent(userId)}/unlock`
+          : `/admin/api/v1/users/${encodeURIComponent(userId)}/reset-mfa`;
+
+        const response = await fetch(route, { method: "POST" });
+        const result = await response.json();
+
+        if (!response.ok) {
+          setMessage("error", result.message || "관리자 작업에 실패했습니다.");
+          return;
+        }
+
+        setMessage("info", action === "unlock" ? "계정 잠금을 해제했습니다." : "사용자 MFA를 초기화했습니다.");
+        await loadUsers();
+      });
+
+      loadUsers().catch(() => {
+        setMessage("error", "관리자 보안 화면 초기화에 실패했습니다.");
+      });
+    </script>
+  </body>
+</html>

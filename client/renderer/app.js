@@ -94,6 +94,20 @@ async function attemptAutoLogin() {
     return false;
   }
 
+  try {
+    const scopeResult = await window.erpClient.getAccessScope();
+    const currentScope = scopeResult?.data?.access_scope || "EXTERNAL";
+    if (currentScope !== "INTERNAL") {
+      document.getElementById("login-id").value = preferences.rememberedUsername;
+      setMessage(loginFeedback, "info", "외부망에서는 자동 로그인을 사용하지 않습니다.");
+      return false;
+    }
+  } catch {
+    document.getElementById("login-id").value = preferences.rememberedUsername;
+    setMessage(loginFeedback, "warn", "접속 범위를 확인하지 못해 자동 로그인을 건너뜁니다.");
+    return false;
+  }
+
   const hasSession = await refreshSession();
   if (hasSession) {
     setMessage(loginFeedback, "info", "최근 로그인 세션으로 자동 로그인되었습니다.");

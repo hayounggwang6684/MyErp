@@ -27,25 +27,58 @@
             <span class="local-badge">Mac mini only</span>
           </div>
           <h2 class="card-title">관리자 로그인</h2>
-          <p class="card-copy">관리자 전용 로컬 진입 화면 시연</p>
+          <p class="card-copy">Mac mini 로컬에서만 계정 잠금 해제와 MFA 초기화를 수행합니다.</p>
 
-          <div class="field">
-            <label for="admin-id">아이디</label>
-            <input id="admin-id" class="text-field" value="admin.ha" />
-          </div>
+          <form id="admin-login-form">
+            <div class="field">
+              <label for="admin-id">아이디</label>
+              <input id="admin-id" name="username" class="text-field" />
+            </div>
 
-          <div class="field">
-            <label for="admin-password">비밀번호</label>
-            <input id="admin-password" class="password-field" type="password" value="dudrhkd2026!" />
-          </div>
+            <div class="field">
+              <label for="admin-password">비밀번호</label>
+              <input id="admin-password" name="password" class="password-field" type="password" />
+            </div>
 
-          <div class="message {{FEEDBACK_CLASS}}">{{FEEDBACK_MESSAGE}}</div>
+            <input type="hidden" name="device_id" value="admin-mac-local-001" />
 
-          <div class="button-row">
-            <a class="primary-button" href="/login">일반 로그인으로 돌아가기</a>
-          </div>
+            <div id="admin-feedback" class="message {{FEEDBACK_CLASS}}">{{FEEDBACK_MESSAGE}}</div>
+
+            <div class="button-row">
+              <button class="primary-button" type="submit">관리자 로그인</button>
+              <a class="secondary-button" href="/login">일반 로그인으로 돌아가기</a>
+            </div>
+          </form>
         </article>
       </section>
     </main>
+    <script>
+      const form = document.getElementById("admin-login-form");
+      const feedback = document.getElementById("admin-feedback");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = Object.fromEntries(new FormData(form).entries());
+
+        const response = await fetch("/admin/api/v1/auth/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-demo-mtls-verified": "true"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          feedback.className = "message error";
+          feedback.textContent = result.message || "관리자 로그인에 실패했습니다.";
+          return;
+        }
+
+        window.location.href = "/admin/security";
+      });
+    </script>
   </body>
 </html>

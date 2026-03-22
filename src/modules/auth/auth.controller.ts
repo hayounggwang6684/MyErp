@@ -80,6 +80,16 @@ function sendSessionResponse(response: Response, session: SessionPayload) {
 }
 
 export class AuthController {
+  getAccessScope = async (request: Request, response: Response) => {
+    const context = buildSessionContext(request);
+    sendJson(response, 200, {
+      success: true,
+      data: {
+        access_scope: context.accessScope,
+      },
+    });
+  };
+
   login = async (request: Request, response: Response) => {
     const result = await authService.login(
       {

@@ -7,6 +7,7 @@ const clientConstants = require("./constants");
 let mainWindow = null;
 let splashWindow = null;
 let sessionCookie = "";
+let runtimeAccessScope = "EXTERNAL";
 let startupUpdateMode = false;
 let splashOpenedAt = 0;
 const defaultPreferences = {
@@ -101,14 +102,19 @@ function readSetCookieHeader(headers) {
   return headers.get("set-cookie") || "";
 }
 
-function persistCurrentSessionIfAllowed() {
+function persistCurrentSessionIfAllowed(scopeOverride) {
   const preferences = readPreferences();
-  if (preferences.autoLoginEnabled && sessionCookie) {
-    writePersistedSession(sessionCookie);
+  const resolvedScope = scopeOverride || preferences.accessScope || runtimeAccessScope;
+
+  if (!preferences.autoLoginEnabled) {
+    clearPersistedSession();
     return;
   }
 
-  clearPersistedSession();
+  if (resolvedScope === "INTERNAL" && sessionCookie) {
+    writePersistedSession(sessionCookie);
+    return;
+  }
 }
 
 async function apiRequest(method, routePath, body) {
@@ -143,7 +149,6 @@ async function apiRequest(method, routePath, body) {
   const setCookie = readSetCookieHeader(response.headers);
   if (setCookie) {
     sessionCookie = parseSetCookie(setCookie);
-    persistCurrentSessionIfAllowed();
   }
 
   const contentType = response.headers.get("content-type") || "";
@@ -384,26 +389,37 @@ ipcMain.handle("app:version", () => ({
 }));
 ipcMain.handle("preference:save", (_event, payload) => {
   const nextPreferences = writePreferences(payload);
-  persistCurrentSessionIfAllowed();
+  persistCurrentSessionIfAllowed(nextPreferences.accessScope);
   return nextPreferences;
+});
+ipcMain.handle("auth:access-scope", async () => {
+  const result = await apiRequest("GET", "/api/v1/auth/access-scope");
+  runtimeAccessScope = result?.data?.access_scope || "EXTERNAL";
+  return result;
 });
 ipcMain.handle("auth:login", async (_event, payload) =>
   {
     const result = await apiRequest("POST", "/api/v1/auth/login", payload);
+    runtimeAccessScope = result?.data?.access_scope || runtimeAccessScope;
     const nextSessionId = result?.data?.pending_session_id || result?.data?.session_id;
     if (nextSessionId) {
       sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
-      persistCurrentSessionIfAllowed();
+      if (result?.data?.login_status === "AUTHENTICATED" && runtimeAccessScope === "INTERNAL") {
+        persistCurrentSessionIfAllowed(runtimeAccessScope);
+      }
     }
     return result;
   },
 );
 ipcMain.handle("auth:verify-mfa", async (_event, payload) => {
   const result = await apiRequest("POST", "/api/v1/auth/mfa/verify", payload);
+  runtimeAccessScope = result?.data?.session_context?.access_scope || runtimeAccessScope;
   const nextSessionId = result?.data?.session_id;
   if (nextSessionId) {
     sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
-    persistCurrentSessionIfAllowed();
+    if (runtimeAccessScope === "INTERNAL") {
+      persistCurrentSessionIfAllowed(runtimeAccessScope);
+    }
   }
   return result;
 });
@@ -416,10 +432,13 @@ ipcMain.handle("auth:mfa-enrollment:status", async () =>
 ipcMain.handle("auth:mfa-enrollment:verify", async (_event, payload) =>
   {
     const result = await apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload);
+    runtimeAccessScope = result?.data?.session_context?.access_scope || runtimeAccessScope;
     const nextSessionId = result?.data?.session_id;
     if (nextSessionId) {
       sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
-      persistCurrentSessionIfAllowed();
+      if (runtimeAccessScope === "INTERNAL") {
+        persistCurrentSessionIfAllowed(runtimeAccessScope);
+      }
     }
     return result;
   },

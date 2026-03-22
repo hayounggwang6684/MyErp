@@ -9,6 +9,18 @@ import { getCookieValue } from "../shared/utils/cookies.js";
 const authCookieName = "erp_demo_session";
 const staticAssetRoot = path.resolve(process.cwd(), "src/web/assets");
 
+function normalizeIp(value: string | undefined) {
+  return String(value || "")
+    .replace(/^::ffff:/, "")
+    .trim();
+}
+
+function isLocalRequest(request: Request) {
+  const forwarded = request.header("x-forwarded-for");
+  const clientIp = forwarded ? normalizeIp(forwarded.split(",")[0]) : normalizeIp(request.ip || request.socket.remoteAddress);
+  return clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "localhost";
+}
+
 async function getSessionFromRequest(request: Request) {
   const sessionId = getCookieValue(request.headers.cookie, authCookieName);
   if (!sessionId) {
@@ -27,6 +39,21 @@ export function registerRoutes(app: Express) {
 
   app.get("/", (_request, response) => {
     response.redirect("/login");
+  });
+
+  app.get("/admin", async (request, response) => {
+    if (!isLocalRequest(request)) {
+      response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const session = await getSessionFromRequest(request);
+    if (session && session.user.roles.includes("SYSTEM_ADMIN")) {
+      response.redirect("/admin/security");
+      return;
+    }
+
+    response.redirect("/admin/login");
   });
 
   app.get("/login", async (request, response) => {
@@ -75,6 +102,11 @@ export function registerRoutes(app: Express) {
   });
 
   app.get("/admin/login", (_request, response) => {
+    if (!isLocalRequest(_request)) {
+      response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
+      return;
+    }
+
     renderPage(response, "admin-login.html", {
       PAGE_TITLE: "ERP Admin Login",
       STATUS_BADGE_CLASS: "warn",
@@ -84,6 +116,26 @@ export function registerRoutes(app: Express) {
     });
   });
 
+  app.get("/admin/security", async (request, response) => {
+    if (!isLocalRequest(request)) {
+      response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const session = await getSessionFromRequest(request);
+    if (!session || !session.user.roles.includes("SYSTEM_ADMIN")) {
+      response.redirect("/admin/login");
+      return;
+    }
+
+    renderPage(response, "admin-security.html", {
+      PAGE_TITLE: "ERP Admin Security",
+      ADMIN_NAME: session.user.name,
+      ADMIN_ROLE: session.user.roles.join(", "),
+    });
+  });
+
+  app.get("/api/v1/auth/access-scope", authController.getAccessScope);
   app.post("/api/v1/auth/login", authController.login);
   app.post("/api/v1/auth/mfa/verify", authController.verifyMfa);
   app.post("/api/v1/auth/mfa/enrollment/start", authController.startMfaEnrollment);
@@ -94,4 +146,11 @@ export function registerRoutes(app: Express) {
   app.get("/api/v1/admin/users/security", adminSecurityController.listUsers);
   app.post("/api/v1/admin/users/:userId/unlock", adminSecurityController.unlockUser);
   app.post("/api/v1/admin/users/:userId/reset-mfa", adminSecurityController.resetUserMfa);
+
+  app.post("/admin/api/v1/auth/login", authController.login);
+  app.get("/admin/api/v1/sessions/me", authController.getCurrentSession);
+  app.post("/admin/api/v1/auth/logout", authController.logout);
+  app.get("/admin/api/v1/users/security", adminSecurityController.listUsers);
+  app.post("/admin/api/v1/users/:userId/unlock", adminSecurityController.unlockUser);
+  app.post("/admin/api/v1/users/:userId/reset-mfa", adminSecurityController.resetUserMfa);
 }

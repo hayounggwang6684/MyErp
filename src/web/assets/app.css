@@ -437,6 +437,21 @@ code {
   margin: 0;
 }
 
+.muted-inline {
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.admin-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compact-button {
+  padding: 9px 12px;
+}
+
 @media (max-width: 1120px) {
   .auth-layout,
   .app-shell,
