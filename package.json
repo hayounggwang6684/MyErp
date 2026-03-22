@@ -1,6 +1,6 @@
 {
   "name": "sunjin-erp-demo",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "Sunjin ERP server and Electron client demo",
   "main": "client/main.js",
@@ -64,8 +64,8 @@
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false
     }
   }
 }

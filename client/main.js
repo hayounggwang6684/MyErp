@@ -5,7 +5,9 @@ const { autoUpdater } = require("electron-updater");
 const clientConstants = require("./constants");
 
 let mainWindow = null;
+let splashWindow = null;
 let sessionCookie = "";
+let startupUpdateMode = false;
 const defaultPreferences = {
   rememberedUsername: "",
   autoLoginEnabled: false,
@@ -160,9 +162,21 @@ async function apiRequest(method, routePath, body) {
 }
 
 function sendUpdateStatus(payload) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send("splash-status", payload);
+  }
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("update-status", payload);
   }
+}
+
+function closeSplashWindow() {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
+
+  splashWindow = null;
 }
 
 function registerAutoUpdater() {
@@ -189,6 +203,12 @@ function registerAutoUpdater() {
       message: `현재 버전(${app.getVersion()})이 최신입니다.`,
       latestVersion: info.version,
     });
+
+    if (startupUpdateMode) {
+      startupUpdateMode = false;
+      createMainWindow();
+      closeSplashWindow();
+    }
   });
 
   autoUpdater.on("download-progress", (progress) => {
@@ -201,8 +221,15 @@ function registerAutoUpdater() {
   autoUpdater.on("update-downloaded", async (info) => {
     sendUpdateStatus({
       status: "DOWNLOADED",
-      message: `새 버전 ${info.version} 다운로드가 완료되었습니다.`,
+      message: `새 버전 ${info.version} 다운로드가 완료되었습니다. 앱을 재시작해 업데이트를 적용합니다.`,
     });
+
+    if (startupUpdateMode) {
+      setTimeout(() => {
+        autoUpdater.quitAndInstall(true, true);
+      }, 1200);
+      return;
+    }
 
     const prompt = await dialog.showMessageBox(mainWindow, {
       type: "info",
@@ -224,6 +251,12 @@ function registerAutoUpdater() {
       status: "CHECK_FAILED",
       message: `업데이트 확인에 실패했습니다: ${error == null ? "unknown" : error.message}`,
     });
+
+    if (startupUpdateMode) {
+      startupUpdateMode = false;
+      createMainWindow();
+      closeSplashWindow();
+    }
   });
 }
 
@@ -244,7 +277,11 @@ async function checkForUpdates() {
   };
 }
 
-function createWindow() {
+function createMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return;
+  }
+
   mainWindow = new BrowserWindow({
     width: 1420,
     height: 940,
@@ -265,18 +302,64 @@ function createWindow() {
   }
 
   mainWindow.loadFile(path.join(__dirname, "renderer/index.html"));
-  mainWindow.webContents.on("did-finish-load", () => {
-    sendUpdateStatus({
-      status: "READY",
-      message: "앱 시작 시 최신 릴리즈를 자동으로 확인하고, 새 버전이 있으면 자동 다운로드 후 재시작 시 적용합니다.",
-    });
-    checkForUpdates().catch(() => {
-      sendUpdateStatus({
-        status: "CHECK_FAILED",
-        message: "앱 시작 시 업데이트 확인에 실패했습니다.",
-      });
-    });
+}
+
+function createSplashWindow() {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    return;
+  }
+
+  splashWindow = new BrowserWindow({
+    width: 560,
+    height: 360,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    frame: false,
+    transparent: false,
+    backgroundColor: "#eef3f8",
+    show: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "splash-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
   });
+
+  if (process.platform !== "darwin") {
+    splashWindow.removeMenu();
+  }
+
+  splashWindow.loadFile(path.join(__dirname, "renderer/splash.html"));
+}
+
+async function runStartupUpdateFlow() {
+  sendUpdateStatus({
+    status: "READY",
+    message: "앱 시작 중입니다. 최신 업데이트를 먼저 확인합니다.",
+  });
+
+  if (!app.isPackaged) {
+    sendUpdateStatus({
+      status: "DEV_MODE",
+      message: "개발 모드에서는 스플래시 업데이트 확인을 건너뜁니다.",
+    });
+    createMainWindow();
+    closeSplashWindow();
+    return;
+  }
+
+  startupUpdateMode = true;
+
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch {
+    startupUpdateMode = false;
+    createMainWindow();
+    closeSplashWindow();
+  }
 }
 
 ipcMain.handle("preference:get", () => readPreferences());
@@ -315,11 +398,13 @@ ipcMain.handle("updates:check", async () => checkForUpdates());
 app.whenReady().then(() => {
   sessionCookie = readPersistedSession();
   registerAutoUpdater();
-  createWindow();
+  createSplashWindow();
+  runStartupUpdateFlow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createSplashWindow();
+      runStartupUpdateFlow();
     }
   });
 });
