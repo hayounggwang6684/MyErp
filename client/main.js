@@ -8,6 +8,7 @@ let mainWindow = null;
 let splashWindow = null;
 let sessionCookie = "";
 let startupUpdateMode = false;
+let splashOpenedAt = 0;
 const defaultPreferences = {
   rememberedUsername: "",
   autoLoginEnabled: false,
@@ -179,6 +180,16 @@ function closeSplashWindow() {
   splashWindow = null;
 }
 
+async function ensureMinimumSplashTime() {
+  const elapsed = Date.now() - splashOpenedAt;
+  const minimumDuration = 1800;
+  if (elapsed >= minimumDuration) {
+    return;
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, minimumDuration - elapsed));
+}
+
 function registerAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
@@ -206,8 +217,10 @@ function registerAutoUpdater() {
 
     if (startupUpdateMode) {
       startupUpdateMode = false;
-      createMainWindow();
-      closeSplashWindow();
+      ensureMinimumSplashTime().then(() => {
+        createMainWindow();
+        closeSplashWindow();
+      });
     }
   });
 
@@ -254,8 +267,10 @@ function registerAutoUpdater() {
 
     if (startupUpdateMode) {
       startupUpdateMode = false;
-      createMainWindow();
-      closeSplashWindow();
+      ensureMinimumSplashTime().then(() => {
+        createMainWindow();
+        closeSplashWindow();
+      });
     }
   });
 }
@@ -332,6 +347,7 @@ function createSplashWindow() {
     splashWindow.removeMenu();
   }
 
+  splashOpenedAt = Date.now();
   splashWindow.loadFile(path.join(__dirname, "renderer/splash.html"));
 }
 
@@ -372,11 +388,25 @@ ipcMain.handle("preference:save", (_event, payload) => {
   return nextPreferences;
 });
 ipcMain.handle("auth:login", async (_event, payload) =>
-  apiRequest("POST", "/api/v1/auth/login", payload),
+  {
+    const result = await apiRequest("POST", "/api/v1/auth/login", payload);
+    const nextSessionId = result?.data?.pending_session_id || result?.data?.session_id;
+    if (nextSessionId) {
+      sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
+      persistCurrentSessionIfAllowed();
+    }
+    return result;
+  },
 );
-ipcMain.handle("auth:verify-mfa", async (_event, payload) =>
-  apiRequest("POST", "/api/v1/auth/mfa/verify", payload),
-);
+ipcMain.handle("auth:verify-mfa", async (_event, payload) => {
+  const result = await apiRequest("POST", "/api/v1/auth/mfa/verify", payload);
+  const nextSessionId = result?.data?.session_id;
+  if (nextSessionId) {
+    sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
+    persistCurrentSessionIfAllowed();
+  }
+  return result;
+});
 ipcMain.handle("auth:mfa-enrollment:start", async () =>
   apiRequest("POST", "/api/v1/auth/mfa/enrollment/start"),
 );
@@ -384,7 +414,15 @@ ipcMain.handle("auth:mfa-enrollment:status", async () =>
   apiRequest("GET", "/api/v1/auth/mfa/enrollment/status"),
 );
 ipcMain.handle("auth:mfa-enrollment:verify", async (_event, payload) =>
-  apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload),
+  {
+    const result = await apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload);
+    const nextSessionId = result?.data?.session_id;
+    if (nextSessionId) {
+      sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
+      persistCurrentSessionIfAllowed();
+    }
+    return result;
+  },
 );
 ipcMain.handle("auth:logout", async () => {
   const result = await apiRequest("POST", "/api/v1/auth/logout");
