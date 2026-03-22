@@ -306,23 +306,6 @@ button, input { font: inherit; }
   margin-top: 16px;
 }
 
-.admin-security-panel {
-  margin-top: 16px;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-
-.admin-panel-title {
-  margin: 0;
-  color: var(--ink-950);
-  font-size: 22px;
-}
-
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -353,11 +336,6 @@ button, input { font: inherit; }
   background: var(--surface-50);
 }
 
-.admin-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 
 .admin-action-button {
   padding: 9px 12px;

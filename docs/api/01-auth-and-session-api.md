@@ -180,6 +180,7 @@
 설명:
 
 - `SYSTEM_ADMIN` 역할 사용자만 호출할 수 있다.
+- Mac mini 로컬 관리자 모드에서만 호출할 수 있다.
 - 계정 잠금 상태, MFA 등록 여부, 최근 사용 시각, 실패 횟수를 함께 반환한다.
 
 ### 4.9 `POST /api/v1/admin/users/:userId/unlock`
@@ -187,6 +188,7 @@
 설명:
 
 - `SYSTEM_ADMIN` 역할 사용자만 호출할 수 있다.
+- Mac mini 로컬 관리자 모드에서만 호출할 수 있다.
 - 잠긴 계정의 실패 횟수와 잠금 상태를 초기화한다.
 
 ### 4.10 `POST /api/v1/admin/users/:userId/reset-mfa`
@@ -194,6 +196,7 @@
 설명:
 
 - `SYSTEM_ADMIN` 역할 사용자만 호출할 수 있다.
+- Mac mini 로컬 관리자 모드에서만 호출할 수 있다.
 - 해당 사용자의 활성 MFA secret을 폐기하고 다음 외부망 로그인 시 다시 등록하게 만든다.
 
 ## 5. 보안 규칙

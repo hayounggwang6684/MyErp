@@ -15,7 +15,16 @@ function getClientIp(request: Request) {
   return String(request.ip || request.socket.remoteAddress || "").replace(/^::ffff:/, "").trim();
 }
 
+function isLocalAdminRequest(request: Request) {
+  const clientIp = getClientIp(request);
+  return clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "localhost";
+}
+
 async function requireAdminSession(request: Request) {
+  if (!isLocalAdminRequest(request)) {
+    return null;
+  }
+
   const sessionId = readAuthCookie(request);
   if (!sessionId) {
     return null;
