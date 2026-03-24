@@ -56,10 +56,11 @@ type SessionPayload = {
   context: SessionContext;
 };
 
-function sendSessionResponse(response: Response, session: SessionPayload) {
+function sendSessionResponse(response: Response, session: SessionPayload, loginStatus?: "AUTHENTICATED") {
   sendJson(response, 200, {
     success: true,
     data: {
+      ...(loginStatus ? { login_status: loginStatus } : {}),
       session_id: session.sessionId,
       expires_at: session.expiresAt,
       idle_expires_at: session.idleExpiresAt,
@@ -108,7 +109,7 @@ export class AuthController {
 
     if (result.data.loginStatus === "AUTHENTICATED") {
       writeAuthCookie(response, result.data.session.sessionId);
-      sendSessionResponse(response, result.data.session);
+      sendSessionResponse(response, result.data.session, "AUTHENTICATED");
       return;
     }
 
