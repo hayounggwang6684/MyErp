@@ -19,6 +19,7 @@ const defaultPreferences = {
   lastLoginAt: "",
   accessScope: "EXTERNAL",
   testAccessScope: "AUTO",
+  showRememberedUsername: true,
 };
 
 function getPreferencePath() {

@@ -97,7 +97,7 @@
 
 - `AppShell`
 - `TopBar`
-- `SideNav`
+- `TabBar`
 - `SectionHeader`
 
 ### 6.2 버튼
@@ -132,9 +132,19 @@
 - `StatusBadge`
 - `DataTable`
 - `InfoCard`
+- `SettingsCard`
 - `EmptyState`
 - `Toast`
 - `Modal`
+
+### 6.6 탭 규칙
+
+- 상위 업무 이동은 `TabBar` 컴포넌트로 통일한다.
+- 탭은 `고객관리 / 수주관리 / 작업관리 / 재고관리 / 직원관리 / 설정` 순서를 기준으로 한다.
+- `직원관리`는 조건부 렌더링 탭이며, 권한이 아니라 부서 기준으로 노출을 제어한다.
+- 활성 탭은 `brand-600` 배경 + 흰색 텍스트를 기본으로 사용한다.
+- 비활성 탭은 `surface-0` 배경과 `line-300` 테두리를 사용한다.
+- `설정` 탭은 업무 카드가 아니라 `SettingsCard + 입력/토글` 조합을 사용한다.
 
 ### 6.5 상태 배지 규칙
 

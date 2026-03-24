@@ -59,6 +59,7 @@ function mapAuthenticatedSession(row: {
   username: string;
   password_hash: string;
   name: string;
+  department: string;
   roles: string[];
   user_status: AppUser["status"];
   failed_password_attempts: number;
@@ -72,6 +73,7 @@ function mapAuthenticatedSession(row: {
       username: row.username,
       passwordHash: row.password_hash,
       name: row.name,
+      department: row.department,
       roles: row.roles,
       status: row.user_status,
       failedPasswordAttempts: row.failed_password_attempts,
@@ -307,6 +309,7 @@ export class SessionService {
       username: string;
       password_hash: string;
       name: string;
+      department: string;
       roles: string[];
       user_status: AppUser["status"];
       failed_password_attempts: number;
@@ -329,6 +332,7 @@ export class SessionService {
          u.username,
          u.password_hash,
          u.name,
+         u.department,
          u.roles,
          u.status as user_status,
          u.failed_password_attempts,

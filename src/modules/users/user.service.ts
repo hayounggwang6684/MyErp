@@ -7,6 +7,7 @@ function mapUser(row: {
   username: string;
   password_hash: string;
   name: string;
+  department: string;
   roles: string[];
   status: UserStatus;
   failed_password_attempts: number;
@@ -18,6 +19,7 @@ function mapUser(row: {
     username: row.username,
     passwordHash: row.password_hash,
     name: row.name,
+    department: row.department,
     roles: row.roles,
     status: row.status,
     failedPasswordAttempts: row.failed_password_attempts,
@@ -113,6 +115,7 @@ export class UserService {
       username: string;
       password_hash: string;
       name: string;
+      department: string;
       roles: string[];
       status: UserStatus;
       failed_password_attempts: number;
@@ -124,6 +127,7 @@ export class UserService {
          username,
          password_hash,
          name,
+         department,
          roles,
          status,
          failed_password_attempts,
@@ -144,6 +148,7 @@ export class UserService {
       username: string;
       password_hash: string;
       name: string;
+      department: string;
       roles: string[];
       status: UserStatus;
       failed_password_attempts: number;
@@ -155,6 +160,7 @@ export class UserService {
          username,
          password_hash,
          name,
+         department,
          roles,
          status,
          failed_password_attempts,

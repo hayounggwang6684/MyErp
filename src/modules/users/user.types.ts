@@ -5,6 +5,7 @@ export type AppUser = {
   username: string;
   passwordHash: string;
   name: string;
+  department: string;
   roles: string[];
   status: UserStatus;
   failedPasswordAttempts: number;

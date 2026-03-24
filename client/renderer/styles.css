@@ -312,11 +312,75 @@ button, input { font: inherit; }
   gap: 16px;
 }
 
-.info-grid {
+.dashboard-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
+
+.dashboard-tab {
+  border: 1px solid var(--line-300);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dashboard-tab.active {
+  background: var(--brand-600);
+  color: #fff;
+  border-color: var(--brand-600);
+}
+
+.dashboard-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.section-title {
+  margin: 0;
+  color: var(--ink-950);
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.section-copy {
+  margin: 8px 0 0;
+  color: var(--ink-600);
+  line-height: 1.6;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.action-button {
+  white-space: nowrap;
+}
+
+.dashboard-card-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-top: 20px;
+}
+
+.metric-card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(212, 219, 230, 0.96);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 20px;
 }
 
 .metric {
@@ -332,10 +396,7 @@ button, input { font: inherit; }
   line-height: 1.5;
 }
 
-.panel-grid {
-  display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: 14px;
+.dashboard-table-panel {
   margin-top: 16px;
 }
 
@@ -381,10 +442,32 @@ button, input { font: inherit; }
   font-size: 12px;
 }
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.settings-card {
+  min-height: 100%;
+}
+
+.settings-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
 @media (max-width: 1280px) {
   .auth-layout,
-  .info-grid,
-  .panel-grid {
+  .dashboard-card-grid,
+  .settings-grid,
+  .dashboard-section-header {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-section-header {
+    display: grid;
   }
 }

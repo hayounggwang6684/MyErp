@@ -67,6 +67,7 @@ function sendSessionResponse(response: Response, session: SessionPayload, loginS
       user: {
         id: session.user.id,
         name: session.user.name,
+        department: session.user.department,
         roles: session.user.roles,
       },
       session_context: {
@@ -190,6 +191,7 @@ export class AuthController {
         user: {
           id: session.user.id,
           name: session.user.name,
+          department: session.user.department,
         },
         roles: session.user.roles,
         account_status: session.user.status,

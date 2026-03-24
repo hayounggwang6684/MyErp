@@ -10,6 +10,7 @@ async function seed() {
       username: "ha",
       password: "1234",
       name: "일반 사용자",
+      department: "영업부",
       roles: ["PARTS_SALES", "INVENTORY_VIEW"],
     },
     {
@@ -17,6 +18,7 @@ async function seed() {
       username: "admin.ha",
       password: "dudrhkd2026!",
       name: "관리자",
+      department: "관리부",
       roles: ["SYSTEM_ADMIN"],
     },
   ];
@@ -29,22 +31,24 @@ async function seed() {
          username,
          password_hash,
          name,
+         department,
          roles,
          status,
          failed_password_attempts,
          locked_until,
          last_failed_password_at
-       ) values ($1, $2, $3, $4, $5, 'ACTIVE', 0, null, null)
+       ) values ($1, $2, $3, $4, $5, $6, 'ACTIVE', 0, null, null)
        on conflict (username) do update
        set password_hash = excluded.password_hash,
            name = excluded.name,
+           department = excluded.department,
            roles = excluded.roles,
            status = 'ACTIVE',
            failed_password_attempts = 0,
            locked_until = null,
            last_failed_password_at = null,
            updated_at = now()`,
-      [user.id, user.username, passwordHash, user.name, user.roles],
+      [user.id, user.username, passwordHash, user.name, user.department, user.roles],
     );
   }
 

@@ -13,6 +13,7 @@ async function migrate() {
       username text not null unique,
       password_hash text not null,
       name text not null,
+      department text not null default '운영부',
       roles text[] not null default '{}',
       status text not null default 'ACTIVE',
       failed_password_attempts integer not null default 0,
@@ -21,6 +22,11 @@ async function migrate() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )
+  `);
+
+  await query(`
+    alter table identity.users
+    add column if not exists department text not null default '운영부'
   `);
 
   await query(`
