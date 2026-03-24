@@ -38,6 +38,15 @@
                   <input id="auto-login" name="auto_login" type="checkbox" />
                   <span>자동 로그인</span>
                 </label>
+                <div class="field">
+                  <label>접속 범위 테스트</label>
+                  <div class="scope-toggle" role="group" aria-label="접속 범위 테스트 선택">
+                    <button id="scope-auto" class="scope-toggle-button active" type="button" data-scope="AUTO">자동</button>
+                    <button id="scope-internal" class="scope-toggle-button" type="button" data-scope="INTERNAL">내부망</button>
+                    <button id="scope-external" class="scope-toggle-button" type="button" data-scope="EXTERNAL">외부망</button>
+                  </div>
+                  <p class="scope-toggle-copy">테스트 중에만 서버 판정을 덮어씁니다. 운영 기준은 자동입니다.</p>
+                </div>
                 <div id="login-feedback" class="message info">계정 정보를 입력한 뒤 로그인하세요.</div>
                 <div class="button-row">
                   <button class="primary-button" type="submit">로그인</button>

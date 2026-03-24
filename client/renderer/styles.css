@@ -270,6 +270,39 @@ button, input { font: inherit; }
   height: 18px;
 }
 
+.scope-toggle {
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--line-300);
+  border-radius: 16px;
+  background: var(--surface-50);
+}
+
+.scope-toggle-button {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--ink-600);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scope-toggle-button.active {
+  background: var(--surface-0);
+  color: var(--brand-700);
+  box-shadow: 0 6px 14px rgba(16, 24, 40, 0.08);
+}
+
+.scope-toggle-copy {
+  margin: 10px 0 0;
+  color: var(--ink-500);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .dashboard-shell { padding: 28px; }
 
 .top-bar, .stack-item {

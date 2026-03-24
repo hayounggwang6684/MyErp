@@ -21,6 +21,8 @@ const dashboardAccessScope = document.getElementById("dashboard-access-scope");
 const dashboardUpdateStatus = document.getElementById("dashboard-update-status");
 const enrollmentQr = document.getElementById("enrollment-qr");
 const enrollmentSecret = document.getElementById("enrollment-secret");
+const scopeToggleButtons = Array.from(document.querySelectorAll(".scope-toggle-button"));
+let selectedTestScope = "AUTO";
 
 async function loadAppVersion() {
   try {
@@ -59,10 +61,18 @@ function showScreen(name) {
   }
 }
 
+function renderScopeToggle(scope) {
+  selectedTestScope = scope;
+  for (const button of scopeToggleButtons) {
+    button.classList.toggle("active", button.dataset.scope === scope);
+  }
+}
+
 async function loadPreferences() {
   const preferences = await window.erpClient.getPreference();
   document.getElementById("login-id").value = preferences.rememberedUsername || "";
   autoLoginCheckbox.checked = Boolean(preferences.autoLoginEnabled);
+  renderScopeToggle(preferences.testAccessScope || "AUTO");
   setBadgeText(
     dashboardAutoLogin,
     preferences.autoLoginEnabled ? "활성" : "비활성",
@@ -157,6 +167,7 @@ loginForm.addEventListener("submit", async (event) => {
       autoLoginEnabled: Boolean(autoLoginCheckbox.checked),
       lastLoginAt: autoLoginCheckbox.checked ? new Date().toISOString() : "",
       accessScope: result.data.access_scope,
+      testAccessScope: selectedTestScope,
     });
     setBadgeText(
       dashboardAutoLogin,
@@ -211,6 +222,25 @@ enrollmentForm.addEventListener("submit", async (event) => {
 document.getElementById("back-to-login").addEventListener("click", () => {
   showScreen("login");
 });
+
+for (const button of scopeToggleButtons) {
+  button.addEventListener("click", async () => {
+    const nextScope = button.dataset.scope || "AUTO";
+    renderScopeToggle(nextScope);
+    const preferences = await window.erpClient.getPreference();
+    await window.erpClient.savePreference({
+      ...preferences,
+      testAccessScope: nextScope,
+    });
+    setMessage(
+      loginFeedback,
+      "info",
+      nextScope === "AUTO"
+        ? "접속 범위 테스트가 자동 판정으로 돌아갔습니다."
+        : `${nextScope === "INTERNAL" ? "내부망" : "외부망"} 테스트 모드로 로그인합니다.`,
+    );
+  });
+}
 
 document.getElementById("restart-enrollment").addEventListener("click", async () => {
   await window.erpClient.logout();

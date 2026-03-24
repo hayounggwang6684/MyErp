@@ -15,6 +15,7 @@ const defaultPreferences = {
   autoLoginEnabled: false,
   lastLoginAt: "",
   accessScope: "EXTERNAL",
+  testAccessScope: "AUTO",
 };
 
 function getPreferencePath() {
@@ -119,6 +120,7 @@ function persistCurrentSessionIfAllowed(scopeOverride) {
 
 async function apiRequest(method, routePath, body) {
   const baseUrl = normalizeBaseUrl(clientConstants.serverUrl);
+  const preferences = readPreferences();
 
   if (!baseUrl) {
     throw new Error("서버 URL이 설정되지 않았습니다.");
@@ -136,8 +138,13 @@ async function apiRequest(method, routePath, body) {
     headers["x-demo-mtls-verified"] = "true";
   }
 
-  if (clientConstants.forceAccessScopeForTesting) {
-    headers["x-demo-force-access-scope"] = clientConstants.forceAccessScopeForTesting;
+  const forcedScope =
+    preferences.testAccessScope && preferences.testAccessScope !== "AUTO"
+      ? preferences.testAccessScope
+      : clientConstants.forceAccessScopeForTesting;
+
+  if (forcedScope) {
+    headers["x-demo-force-access-scope"] = forcedScope;
   }
 
   const response = await fetch(`${baseUrl}${routePath}`, {
