@@ -10,6 +10,9 @@ let sessionCookie = "";
 let runtimeAccessScope = "EXTERNAL";
 let startupUpdateMode = false;
 let splashOpenedAt = 0;
+let updateCheckInFlight = false;
+let startupRetryCount = 0;
+let backgroundRecheckTimer = null;
 const defaultPreferences = {
   rememberedUsername: "",
   autoLoginEnabled: false,
@@ -184,6 +187,13 @@ function sendUpdateStatus(payload) {
   }
 }
 
+function clearBackgroundRecheckTimer() {
+  if (backgroundRecheckTimer) {
+    clearTimeout(backgroundRecheckTimer);
+    backgroundRecheckTimer = null;
+  }
+}
+
 function closeSplashWindow() {
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close();
@@ -202,11 +212,50 @@ async function ensureMinimumSplashTime() {
   await new Promise((resolve) => setTimeout(resolve, minimumDuration - elapsed));
 }
 
+function scheduleBackgroundUpdateRecheck(delayMs = 30000) {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  clearBackgroundRecheckTimer();
+  backgroundRecheckTimer = setTimeout(() => {
+    checkForUpdates({ silent: true }).catch(() => {});
+  }, delayMs);
+}
+
+function finishStartupUpdateFlow() {
+  startupUpdateMode = false;
+  startupRetryCount = 0;
+  ensureMinimumSplashTime().then(() => {
+    createMainWindow();
+    closeSplashWindow();
+    scheduleBackgroundUpdateRecheck(30000);
+  });
+}
+
+function scheduleStartupRetry(error) {
+  if (startupRetryCount >= 2) {
+    finishStartupUpdateFlow();
+    return;
+  }
+
+  startupRetryCount += 1;
+  sendUpdateStatus({
+    status: "CHECKING",
+    message: `업데이트 정보를 다시 확인하는 중입니다. (${startupRetryCount}/2)${error?.message ? ` ${error.message}` : ""}`,
+  });
+
+  setTimeout(() => {
+    runStartupUpdateFlow();
+  }, 8000);
+}
+
 function registerAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("checking-for-update", () => {
+    updateCheckInFlight = true;
     sendUpdateStatus({
       status: "CHECKING",
       message: "최신 업데이트를 확인하는 중입니다.",
@@ -214,6 +263,7 @@ function registerAutoUpdater() {
   });
 
   autoUpdater.on("update-available", (info) => {
+    updateCheckInFlight = false;
     sendUpdateStatus({
       status: "UPDATE_AVAILABLE",
       message: `새 버전 ${info.version} 다운로드를 시작합니다.`,
@@ -221,6 +271,7 @@ function registerAutoUpdater() {
   });
 
   autoUpdater.on("update-not-available", (info) => {
+    updateCheckInFlight = false;
     sendUpdateStatus({
       status: "UP_TO_DATE",
       message: `현재 버전(${app.getVersion()})이 최신입니다.`,
@@ -228,11 +279,7 @@ function registerAutoUpdater() {
     });
 
     if (startupUpdateMode) {
-      startupUpdateMode = false;
-      ensureMinimumSplashTime().then(() => {
-        createMainWindow();
-        closeSplashWindow();
-      });
+      finishStartupUpdateFlow();
     }
   });
 
@@ -244,6 +291,7 @@ function registerAutoUpdater() {
   });
 
   autoUpdater.on("update-downloaded", async (info) => {
+    updateCheckInFlight = false;
     sendUpdateStatus({
       status: "DOWNLOADED",
       message: `새 버전 ${info.version} 다운로드가 완료되었습니다. 앱을 재시작해 업데이트를 적용합니다.`,
@@ -272,22 +320,19 @@ function registerAutoUpdater() {
   });
 
   autoUpdater.on("error", (error) => {
+    updateCheckInFlight = false;
     sendUpdateStatus({
       status: "CHECK_FAILED",
       message: `업데이트 확인에 실패했습니다: ${error == null ? "unknown" : error.message}`,
     });
 
     if (startupUpdateMode) {
-      startupUpdateMode = false;
-      ensureMinimumSplashTime().then(() => {
-        createMainWindow();
-        closeSplashWindow();
-      });
+      scheduleStartupRetry(error);
     }
   });
 }
 
-async function checkForUpdates() {
+async function checkForUpdates(_options = {}) {
   if (!app.isPackaged) {
     const status = {
       status: "DEV_MODE",
@@ -295,6 +340,13 @@ async function checkForUpdates() {
     };
     sendUpdateStatus(status);
     return status;
+  }
+
+  if (updateCheckInFlight) {
+    return {
+      status: "CHECKING",
+      message: "이미 최신 업데이트를 확인하는 중입니다.",
+    };
   }
 
   await autoUpdater.checkForUpdates();
@@ -382,11 +434,9 @@ async function runStartupUpdateFlow() {
   startupUpdateMode = true;
 
   try {
-    await autoUpdater.checkForUpdates();
-  } catch {
-    startupUpdateMode = false;
-    createMainWindow();
-    closeSplashWindow();
+    await checkForUpdates({ startup: true });
+  } catch (error) {
+    scheduleStartupRetry(error);
   }
 }
 
