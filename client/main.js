@@ -121,7 +121,7 @@ function persistCurrentSessionIfAllowed(scopeOverride) {
   }
 }
 
-async function apiRequest(method, routePath, body) {
+async function apiRequest(method, routePath, body, options = {}) {
   const baseUrl = normalizeBaseUrl(clientConstants.serverUrl);
   const preferences = readPreferences();
 
@@ -142,9 +142,11 @@ async function apiRequest(method, routePath, body) {
   }
 
   const forcedScope =
-    preferences.testAccessScope && preferences.testAccessScope !== "AUTO"
-      ? preferences.testAccessScope
-      : clientConstants.forceAccessScopeForTesting;
+    options.testAccessScope && options.testAccessScope !== "AUTO"
+      ? options.testAccessScope
+      : preferences.testAccessScope && preferences.testAccessScope !== "AUTO"
+        ? preferences.testAccessScope
+        : clientConstants.forceAccessScopeForTesting;
 
   if (forcedScope) {
     headers["x-demo-force-access-scope"] = forcedScope;
@@ -456,7 +458,10 @@ ipcMain.handle("auth:access-scope", async () => {
 });
 ipcMain.handle("auth:login", async (_event, payload) =>
   {
-    const result = await apiRequest("POST", "/api/v1/auth/login", payload);
+    const { test_access_scope: testAccessScope, ...requestBody } = payload || {};
+    const result = await apiRequest("POST", "/api/v1/auth/login", requestBody, {
+      testAccessScope,
+    });
     runtimeAccessScope = result?.data?.access_scope || runtimeAccessScope;
     const nextSessionId = result?.data?.pending_session_id || result?.data?.session_id;
     if (nextSessionId) {

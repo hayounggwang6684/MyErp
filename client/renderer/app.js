@@ -159,6 +159,7 @@ window.erpClient.onUpdateStatus((payload) => {
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = Object.fromEntries(new FormData(loginForm).entries());
+  payload.test_access_scope = selectedTestScope;
 
   try {
     const result = await window.erpClient.login(payload);
