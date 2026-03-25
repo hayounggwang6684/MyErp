@@ -49,7 +49,7 @@ export function registerRoutes(app: Express) {
 
     const session = await getSessionFromRequest(request);
     if (session && session.user.roles.includes("SYSTEM_ADMIN")) {
-      response.redirect("/admin/security");
+      response.redirect("/admin/dashboard");
       return;
     }
 
@@ -116,6 +116,82 @@ export function registerRoutes(app: Express) {
     });
   });
 
+  app.get("/admin/dashboard", async (request, response) => {
+    if (!isLocalRequest(request)) {
+      response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const session = await getSessionFromRequest(request);
+    if (!session || !session.user.roles.includes("SYSTEM_ADMIN")) {
+      response.redirect("/admin/login");
+      return;
+    }
+
+    renderPage(response, "admin-dashboard.html", {
+      PAGE_TITLE: "ERP Admin Dashboard",
+      ADMIN_NAME: session.user.name,
+      ADMIN_ROLE: session.user.roles.join(", "),
+    });
+  });
+
+  app.get("/admin/users", async (request, response) => {
+    if (!isLocalRequest(request)) {
+      response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const session = await getSessionFromRequest(request);
+    if (!session || !session.user.roles.includes("SYSTEM_ADMIN")) {
+      response.redirect("/admin/login");
+      return;
+    }
+
+    renderPage(response, "admin-users.html", {
+      PAGE_TITLE: "ERP Admin Users",
+      ADMIN_NAME: session.user.name,
+      ADMIN_ROLE: session.user.roles.join(", "),
+    });
+  });
+
+  app.get("/admin/updates", async (request, response) => {
+    if (!isLocalRequest(request)) {
+      response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const session = await getSessionFromRequest(request);
+    if (!session || !session.user.roles.includes("SYSTEM_ADMIN")) {
+      response.redirect("/admin/login");
+      return;
+    }
+
+    renderPage(response, "admin-updates.html", {
+      PAGE_TITLE: "ERP Admin Updates",
+      ADMIN_NAME: session.user.name,
+      ADMIN_ROLE: session.user.roles.join(", "),
+    });
+  });
+
+  app.get("/admin/audit", async (request, response) => {
+    if (!isLocalRequest(request)) {
+      response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const session = await getSessionFromRequest(request);
+    if (!session || !session.user.roles.includes("SYSTEM_ADMIN")) {
+      response.redirect("/admin/login");
+      return;
+    }
+
+    renderPage(response, "admin-audit.html", {
+      PAGE_TITLE: "ERP Admin Audit",
+      ADMIN_NAME: session.user.name,
+      ADMIN_ROLE: session.user.roles.join(", "),
+    });
+  });
+
   app.get("/admin/security", async (request, response) => {
     if (!isLocalRequest(request)) {
       response.status(403).type("text/plain").send("관리자 화면은 Mac mini 로컬 접속에서만 사용할 수 있습니다.");
@@ -128,11 +204,7 @@ export function registerRoutes(app: Express) {
       return;
     }
 
-    renderPage(response, "admin-security.html", {
-      PAGE_TITLE: "ERP Admin Security",
-      ADMIN_NAME: session.user.name,
-      ADMIN_ROLE: session.user.roles.join(", "),
-    });
+    response.redirect("/admin/users");
   });
 
   app.get("/api/v1/auth/access-scope", authController.getAccessScope);
@@ -150,7 +222,13 @@ export function registerRoutes(app: Express) {
   app.post("/admin/api/v1/auth/login", authController.login);
   app.get("/admin/api/v1/sessions/me", authController.getCurrentSession);
   app.post("/admin/api/v1/auth/logout", authController.logout);
+  app.get("/admin/api/v1/overview", adminSecurityController.getOverview);
   app.get("/admin/api/v1/users/security", adminSecurityController.listUsers);
+  app.get("/admin/api/v1/audit", adminSecurityController.listAuditEvents);
+  app.get("/admin/api/v1/updates", adminSecurityController.getUpdateStatus);
+  app.patch("/admin/api/v1/employees/:employeeId", adminSecurityController.updateEmployee);
+  app.post("/admin/api/v1/users/:userId/status", adminSecurityController.updateUserStatus);
+  app.put("/admin/api/v1/users/:userId/roles", adminSecurityController.updateUserRoles);
   app.post("/admin/api/v1/users/:userId/unlock", adminSecurityController.unlockUser);
   app.post("/admin/api/v1/users/:userId/reset-mfa", adminSecurityController.resetUserMfa);
 }

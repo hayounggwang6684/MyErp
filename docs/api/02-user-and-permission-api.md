@@ -30,6 +30,9 @@
 | `POST` | `/admin-api/v1/users/{userId}/unlock` | 계정 잠금 해제 |
 | `POST` | `/admin-api/v1/users/{userId}/deactivate` | 계정 비활성화 |
 | `PUT` | `/admin-api/v1/users/{userId}/roles` | 사용자 역할 재설정 |
+| `PUT` | `/admin/api/v1/users/{userId}/roles` | Mac mini 로컬 관리자 화면용 사용자 역할 재설정 |
+| `POST` | `/admin/api/v1/users/{userId}/status` | Mac mini 로컬 관리자 화면용 계정 활성/비활성 전환 |
+| `PATCH` | `/admin/api/v1/employees/{employeeId}` | Mac mini 로컬 관리자 화면용 직원 기본정보 수정 |
 | `GET` | `/api/v1/me/permissions` | 현재 사용자 권한 조회 |
 | `POST` | `/api/v1/permission-exceptions` | 예외 권한 요청 |
 | `POST` | `/admin-api/v1/permission-exceptions/{requestId}/approve` | 예외 권한 승인 |
@@ -38,6 +41,8 @@
 ## 3. 핵심 규칙
 
 - 관리자 계정 관리 API는 Mac mini 로컬 전용이다.
+- 직원 기본정보 API와 ERP 사용자 계정 API는 분리한다.
+- 모든 직원이 ERP 사용자 계정을 가지는 것은 아니다.
 - 사용자 생성 시 초기 상태는 `승인대기`다.
 - 잠금 해제와 비활성 처리는 감사 로그를 남긴다.
 - 권한 변경은 역할 기반 매핑과 예외 권한을 함께 고려한다.
@@ -60,7 +65,19 @@
 
 ```json
 {
-  "role_ids": ["SALES_AGENT", "READ_ONLY_AUDIT"]
+  "roles": ["ORDER_MANAGE", "INVENTORY_VIEW"]
+}
+```
+
+### 4.3 직원 기본정보 수정
+
+```json
+{
+  "department": "정비부",
+  "job_title": "정비 팀장",
+  "contact": "010-2222-1002",
+  "work_status": "현장 작업",
+  "assigned_work_count": 6
 }
 ```
 
@@ -90,6 +107,8 @@
 - `users/*`와 `roles` 변경은 시스템 관리자 권한이 필요하다.
 - 권한 변경, 잠금 해제, 비활성화는 재인증 대상이다.
 - 예외 권한 승인은 관리자 또는 보안 관리자만 가능하다.
+- Mac mini 로컬 관리자 화면은 `부서`와 별개로 사용자별 역할을 직접 부여할 수 있다.
+- 관리자 로컬 화면은 계정 상태 변경과 직원 기본정보 수정 기능을 함께 제공한다.
 
 ## 7. 구현 메모
 

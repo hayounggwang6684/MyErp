@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{PAGE_TITLE}}</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="side-nav">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="nav-title">관리자 로컬</h1>
+        <p class="nav-copy">Mac mini 로컬 브라우저에서만 운영 상태와 민감 관리 작업을 수행합니다.</p>
+        <div class="nav-section">
+          <a class="nav-link active" href="/admin/dashboard">운영 현황</a>
+          <a class="nav-link" href="/admin/users">사용자 관리</a>
+          <a class="nav-link" href="/admin/updates">업데이트 관리</a>
+          <a class="nav-link" href="/admin/audit">감사 로그</a>
+        </div>
+      </aside>
+
+      <section class="dashboard-main">
+        <header class="top-bar">
+          <div>
+            <h1>운영 현황</h1>
+            <p>{{ADMIN_NAME}} · {{ADMIN_ROLE}}</p>
+          </div>
+          <div class="button-row">
+            <button id="overview-refresh" class="ghost-button" type="button">상태 새로고침</button>
+            <button id="admin-logout" class="secondary-button" type="button">로그아웃</button>
+          </div>
+        </header>
+
+        <section class="info-grid admin-summary-grid" id="overview-grid"></section>
+
+        <section class="panel-grid">
+          <article class="info-card">
+            <p class="eyebrow">운영 메모</p>
+            <div class="stack-list">
+              <div class="stack-item"><span>서버 반영 순서</span><span class="status-badge neutral">서버 먼저, 클라이언트 나중</span></div>
+              <div class="stack-item"><span>관리 경계</span><span class="status-badge warn">LOCAL_ADMIN</span></div>
+              <div class="stack-item"><span>클라이언트 배포</span><span class="status-badge neutral">GitHub Releases</span></div>
+            </div>
+          </article>
+          <article class="info-card">
+            <p class="eyebrow">빠른 이동</p>
+            <div class="button-row">
+              <a class="secondary-button" href="/admin/users">사용자 관리</a>
+              <a class="secondary-button" href="/admin/updates">업데이트 관리</a>
+              <a class="secondary-button" href="/admin/audit">감사 로그</a>
+            </div>
+            <div id="overview-feedback" class="message info">운영 상태를 불러오는 중입니다.</div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const grid = document.getElementById("overview-grid");
+      const feedback = document.getElementById("overview-feedback");
+
+      function setMessage(kind, message) {
+        feedback.className = `message ${kind}`;
+        feedback.textContent = message;
+      }
+
+      async function loadOverview() {
+        const response = await fetch("/admin/api/v1/overview");
+        const result = await response.json();
+
+        if (!response.ok) {
+          setMessage("error", result.message || "운영 현황을 불러오지 못했습니다.");
+          if (response.status === 401 || response.status === 403) {
+            window.location.href = "/admin/login";
+          }
+          return;
+        }
+
+        const data = result.data;
+        const cards = [
+          { label: "현재 서버 버전", value: data.serverVersion, detail: "Mac mini 로컬 서버 기준" },
+          { label: "최신 클라이언트 버전", value: data.latestClientReleaseVersion, detail: "GitHub Releases 기준" },
+          { label: "DB 연결 상태", value: data.postgresStatus, detail: "PostgreSQL 연결 상태" },
+          { label: "점검 모드", value: data.maintenanceMode ? "ON" : "OFF", detail: "현재 점검 모드 사용 여부" },
+          { label: "최근 로그인 실패", value: String(data.loginFailures), detail: "최근 인증 실패 이벤트" },
+          { label: "최근 관리자 조치", value: String(data.adminActions), detail: "잠금 해제, MFA 초기화 포함" }
+        ];
+
+        grid.innerHTML = cards.map((card) => `
+          <article class="info-card">
+            <p class="eyebrow">${card.label}</p>
+            <p class="metric">${card.value}</p>
+            <p class="detail">${card.detail}</p>
+          </article>
+        `).join("");
+
+        setMessage("info", "운영 현황과 최근 보안 이벤트 요약을 확인할 수 있습니다.");
+      }
+
+      document.getElementById("overview-refresh").addEventListener("click", loadOverview);
+      document.getElementById("admin-logout").addEventListener("click", async () => {
+        await fetch("/admin/api/v1/auth/logout", { method: "POST" });
+        window.location.href = "/admin/login";
+      });
+
+      loadOverview().catch(() => {
+        setMessage("error", "운영 현황 화면 초기화에 실패했습니다.");
+      });
+    </script>
+  </body>
+</html>

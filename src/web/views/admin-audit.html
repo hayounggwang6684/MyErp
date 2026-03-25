@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{PAGE_TITLE}}</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="side-nav">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="nav-title">관리자 로컬</h1>
+        <p class="nav-copy">로그인, MFA, 관리자 조치 이력을 Mac mini 로컬 화면에서 조회합니다.</p>
+        <div class="nav-section">
+          <a class="nav-link" href="/admin/dashboard">운영 현황</a>
+          <a class="nav-link" href="/admin/users">사용자 관리</a>
+          <a class="nav-link" href="/admin/updates">업데이트 관리</a>
+          <a class="nav-link active" href="/admin/audit">감사 로그</a>
+        </div>
+      </aside>
+
+      <section class="dashboard-main">
+        <header class="top-bar">
+          <div>
+            <h1>감사 로그</h1>
+            <p>{{ADMIN_NAME}} · {{ADMIN_ROLE}}</p>
+          </div>
+          <div class="button-row">
+            <button id="audit-refresh" class="ghost-button" type="button">목록 새로고침</button>
+            <button id="admin-logout" class="secondary-button" type="button">로그아웃</button>
+          </div>
+        </header>
+
+        <section class="panel-grid">
+          <article class="info-card admin-wide-card">
+            <p class="eyebrow">감사 로그 필터</p>
+            <div class="admin-filter-grid">
+              <label class="admin-filter-field">
+                <span>사용자</span>
+                <input id="filter-username" class="text-field compact-input" placeholder="ha 또는 admin.ha" />
+              </label>
+              <label class="admin-filter-field">
+                <span>이벤트</span>
+                <select id="filter-event-type" class="text-field compact-input">
+                  <option value="">전체</option>
+                  <option value="LOGIN_SUCCEEDED">LOGIN_SUCCEEDED</option>
+                  <option value="LOGIN_FAILED">LOGIN_FAILED</option>
+                  <option value="ACCOUNT_LOCKED">ACCOUNT_LOCKED</option>
+                  <option value="MFA_CHALLENGE_CREATED">MFA_CHALLENGE_CREATED</option>
+                  <option value="MFA_VERIFIED">MFA_VERIFIED</option>
+                  <option value="MFA_ENROLLMENT_STARTED">MFA_ENROLLMENT_STARTED</option>
+                  <option value="MFA_ENROLLMENT_VERIFIED">MFA_ENROLLMENT_VERIFIED</option>
+                  <option value="ADMIN_ACCOUNT_UNLOCKED">ADMIN_ACCOUNT_UNLOCKED</option>
+                  <option value="ADMIN_MFA_RESET">ADMIN_MFA_RESET</option>
+                  <option value="ADMIN_ROLES_UPDATED">ADMIN_ROLES_UPDATED</option>
+                  <option value="ADMIN_USER_STATUS_UPDATED">ADMIN_USER_STATUS_UPDATED</option>
+                  <option value="ADMIN_EMPLOYEE_UPDATED">ADMIN_EMPLOYEE_UPDATED</option>
+                </select>
+              </label>
+              <label class="admin-filter-field">
+                <span>성공 여부</span>
+                <select id="filter-success" class="text-field compact-input">
+                  <option value="">전체</option>
+                  <option value="true">성공</option>
+                  <option value="false">실패</option>
+                </select>
+              </label>
+              <label class="admin-filter-field">
+                <span>시작일</span>
+                <input id="filter-date-from" class="text-field compact-input" type="date" />
+              </label>
+              <label class="admin-filter-field">
+                <span>종료일</span>
+                <input id="filter-date-to" class="text-field compact-input" type="date" />
+              </label>
+            </div>
+          </article>
+
+          <article class="info-card admin-wide-card">
+            <p class="eyebrow">최근 인증 및 관리자 작업 이력</p>
+            <div id="audit-feedback" class="message info">감사 로그를 불러오는 중입니다.</div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>시각</th>
+                  <th>이벤트</th>
+                  <th>사용자</th>
+                  <th>범위</th>
+                  <th>성공</th>
+                  <th>사유</th>
+                </tr>
+              </thead>
+              <tbody id="audit-body"></tbody>
+            </table>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const feedback = document.getElementById("audit-feedback");
+      const body = document.getElementById("audit-body");
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function setMessage(kind, message) {
+        feedback.className = `message ${kind}`;
+        feedback.textContent = message;
+      }
+
+      function buildQueryString() {
+        const query = new URLSearchParams();
+        const username = document.getElementById("filter-username").value.trim();
+        const eventType = document.getElementById("filter-event-type").value;
+        const success = document.getElementById("filter-success").value;
+        const dateFrom = document.getElementById("filter-date-from").value;
+        const dateTo = document.getElementById("filter-date-to").value;
+
+        if (username) query.set("username", username);
+        if (eventType) query.set("event_type", eventType);
+        if (success) query.set("success", success);
+        if (dateFrom) query.set("date_from", `${dateFrom}T00:00:00+09:00`);
+        if (dateTo) query.set("date_to", `${dateTo}T23:59:59+09:00`);
+
+        const suffix = query.toString();
+        return suffix ? `?${suffix}` : "";
+      }
+
+      async function loadAudit() {
+        const response = await fetch(`/admin/api/v1/audit${buildQueryString()}`);
+        const result = await response.json();
+
+        if (!response.ok) {
+          setMessage("error", result.message || "감사 로그를 불러오지 못했습니다.");
+          if (response.status === 401 || response.status === 403) {
+            window.location.href = "/admin/login";
+          }
+          return;
+        }
+
+        body.innerHTML = result.data.map((event) => {
+          const successClass = event.success ? "ok" : "warn";
+          return `
+            <tr>
+              <td>${escapeHtml(new Date(event.createdAt).toLocaleString("ko-KR"))}</td>
+              <td>${escapeHtml(event.eventType)}</td>
+              <td>${escapeHtml(event.usernameSnapshot || "-")}</td>
+              <td>${escapeHtml(event.accessScope)}</td>
+              <td><span class="status-badge ${successClass}">${event.success ? "성공" : "실패"}</span></td>
+              <td>${escapeHtml(event.reasonCode || "-")}</td>
+            </tr>
+          `;
+        }).join("");
+
+        setMessage("info", "필터 조건에 맞는 인증 및 관리자 조치 이력을 조회했습니다.");
+      }
+
+      document.getElementById("audit-refresh").addEventListener("click", loadAudit);
+      document.getElementById("filter-username").addEventListener("change", loadAudit);
+      document.getElementById("filter-event-type").addEventListener("change", loadAudit);
+      document.getElementById("filter-success").addEventListener("change", loadAudit);
+      document.getElementById("filter-date-from").addEventListener("change", loadAudit);
+      document.getElementById("filter-date-to").addEventListener("change", loadAudit);
+      document.getElementById("admin-logout").addEventListener("click", async () => {
+        await fetch("/admin/api/v1/auth/logout", { method: "POST" });
+        window.location.href = "/admin/login";
+      });
+
+      loadAudit().catch(() => {
+        setMessage("error", "감사 로그 화면 초기화에 실패했습니다.");
+      });
+    </script>
+  </body>
+</html>

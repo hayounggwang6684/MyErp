@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{PAGE_TITLE}}</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="side-nav">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="nav-title">관리자 로컬</h1>
+        <p class="nav-copy">ERP 계정과 직원 기본정보를 분리해 관리합니다. 모든 직원이 사용자는 아니며, 사용자 계정은 특정 직원과 연결될 수 있습니다.</p>
+        <div class="nav-section">
+          <a class="nav-link" href="/admin/dashboard">운영 현황</a>
+          <a class="nav-link active" href="/admin/users">사용자 관리</a>
+          <a class="nav-link" href="/admin/updates">업데이트 관리</a>
+          <a class="nav-link" href="/admin/audit">감사 로그</a>
+        </div>
+      </aside>
+
+      <section class="dashboard-main">
+        <header class="top-bar">
+          <div>
+            <h1>사용자 관리</h1>
+            <p>{{ADMIN_NAME}} · {{ADMIN_ROLE}}</p>
+          </div>
+          <div class="button-row">
+            <button id="admin-refresh" class="ghost-button" type="button">목록 새로고침</button>
+            <button id="admin-logout" class="secondary-button" type="button">로그아웃</button>
+          </div>
+        </header>
+
+        <section class="panel-grid">
+          <article class="info-card admin-wide-card">
+            <p class="eyebrow">ERP 사용자 계정</p>
+            <div id="admin-feedback" class="message info">사용자 계정과 직원 목록을 불러오는 중입니다.</div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>계정</th>
+                  <th>연결 직원</th>
+                  <th>권한</th>
+                  <th>상태</th>
+                  <th>MFA</th>
+                  <th>조치</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users-body"></tbody>
+            </table>
+          </article>
+
+          <article class="info-card admin-wide-card">
+            <p class="eyebrow">직원 기본정보</p>
+            <div class="message info">직원은 ERP를 사용하지 않아도 이 목록에 존재할 수 있습니다. ERP 계정은 일부 직원에게만 연결됩니다.</div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>사번</th>
+                  <th>이름</th>
+                  <th>부서</th>
+                  <th>직무</th>
+                  <th>연락처</th>
+                  <th>업무 상태</th>
+                  <th>담당 건수</th>
+                  <th>연결 계정</th>
+                  <th>조치</th>
+                </tr>
+              </thead>
+              <tbody id="admin-employees-body"></tbody>
+            </table>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const feedback = document.getElementById("admin-feedback");
+      const usersBody = document.getElementById("admin-users-body");
+      const employeesBody = document.getElementById("admin-employees-body");
+      let availableRoles = [];
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function setMessage(kind, message) {
+        feedback.className = `message ${kind}`;
+        feedback.textContent = message;
+      }
+
+      function renderRoleOptions(user) {
+        return availableRoles.map((role) => {
+          const checked = user.roles.includes(role) ? "checked" : "";
+          return `
+            <label class="role-chip">
+              <input type="checkbox" data-role-checkbox value="${escapeHtml(role)}" ${checked} />
+              <span>${escapeHtml(role)}</span>
+            </label>
+          `;
+        }).join("");
+      }
+
+      function renderUsers(users) {
+        usersBody.innerHTML = users.map((user) => {
+          const mfaText = user.hasActiveMfa ? "활성" : "미등록";
+          const mfaClass = user.hasActiveMfa ? "ok" : "warn";
+          const statusClass = user.status === "LOCKED" ? "warn" : user.status === "INACTIVE" ? "neutral" : "ok";
+          const employeeName = user.employeeId ? `${user.employee.name} / ${user.department}` : "연결 직원 없음";
+
+          return `
+            <tr data-user-id="${escapeHtml(user.id)}">
+              <td>
+                <strong>${escapeHtml(user.username)}</strong><br />
+                <span class="muted-inline">${escapeHtml(user.name)}</span>
+              </td>
+              <td>
+                ${escapeHtml(employeeName)}<br />
+                <span class="muted-inline">${escapeHtml(user.employee.jobTitle || "직무 미지정")}</span>
+              </td>
+              <td>
+                <div class="role-grid">${renderRoleOptions(user)}</div>
+                <button class="ghost-button compact-button role-save-button" data-action="save-roles" data-user-id="${escapeHtml(user.id)}">권한 저장</button>
+              </td>
+              <td>
+                <span class="status-badge ${statusClass}">${escapeHtml(user.status)}</span><br />
+                <span class="muted-inline">실패 ${escapeHtml(String(user.failedPasswordAttempts))}회</span>
+              </td>
+              <td>
+                <span class="status-badge ${mfaClass}">${mfaText}</span><br />
+                <span class="muted-inline">${escapeHtml(user.activeMfaLastUsedAt || "-")}</span>
+              </td>
+              <td>
+                <div class="admin-inline-actions">
+                  <button class="ghost-button compact-button" data-action="unlock" data-user-id="${escapeHtml(user.id)}">잠금 해제</button>
+                  <button class="ghost-button compact-button" data-action="reset-mfa" data-user-id="${escapeHtml(user.id)}">MFA 초기화</button>
+                  <button class="ghost-button compact-button" data-action="toggle-status" data-status="${user.status === "INACTIVE" ? "ACTIVE" : "INACTIVE"}" data-user-id="${escapeHtml(user.id)}">${user.status === "INACTIVE" ? "활성화" : "비활성화"}</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      function renderEmployees(employees) {
+        employeesBody.innerHTML = employees.map((employee) => `
+          <tr data-employee-id="${escapeHtml(employee.id)}">
+            <td>${escapeHtml(employee.employeeNo)}</td>
+            <td><strong>${escapeHtml(employee.name)}</strong></td>
+            <td><input class="text-field compact-input" data-field="department" value="${escapeHtml(employee.department)}" /></td>
+            <td><input class="text-field compact-input" data-field="job_title" value="${escapeHtml(employee.jobTitle)}" /></td>
+            <td><input class="text-field compact-input" data-field="contact" value="${escapeHtml(employee.contact)}" /></td>
+            <td>
+              <select class="text-field compact-input" data-field="work_status">
+                ${["근무 중", "업무 대기", "현장 작업", "부재/휴가"].map((status) => `
+                  <option value="${escapeHtml(status)}" ${employee.workStatus === status ? "selected" : ""}>${escapeHtml(status)}</option>
+                `).join("")}
+              </select>
+            </td>
+            <td><input class="text-field compact-input compact-number" type="number" min="0" data-field="assigned_work_count" value="${escapeHtml(String(employee.assignedWorkCount))}" /></td>
+            <td>
+              ${escapeHtml(employee.linkedUsername || "-")}<br />
+              <span class="muted-inline">${escapeHtml(employee.linkedUserStatus || "계정 없음")}</span>
+            </td>
+            <td>
+              <button class="ghost-button compact-button" data-action="save-employee" data-employee-id="${escapeHtml(employee.id)}">직원 정보 저장</button>
+            </td>
+          </tr>
+        `).join("");
+      }
+
+      async function loadUsers() {
+        const response = await fetch("/admin/api/v1/users/security");
+        const result = await response.json();
+
+        if (!response.ok) {
+          setMessage("error", result.message || "사용자 정보를 불러오지 못했습니다.");
+          if (response.status === 401 || response.status === 403) {
+            window.location.href = "/admin/login";
+          }
+          return;
+        }
+
+        availableRoles = result.data.availableRoles || [];
+        renderUsers(result.data.users || []);
+        renderEmployees(result.data.employees || []);
+        setMessage("info", "ERP 사용자 계정과 전체 직원 목록을 함께 관리할 수 있습니다.");
+      }
+
+      async function saveUserRoles(userId, row) {
+        const roles = Array.from(row.querySelectorAll("input[data-role-checkbox]:checked")).map((input) => input.value);
+        const response = await fetch(`/admin/api/v1/users/${encodeURIComponent(userId)}/roles`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roles }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setMessage("error", result.message || "권한 저장에 실패했습니다.");
+          return;
+        }
+        setMessage("info", "사용자 권한을 저장했습니다.");
+        await loadUsers();
+      }
+
+      async function saveEmployee(employeeId, row) {
+        const payload = {
+          department: row.querySelector('[data-field="department"]').value,
+          job_title: row.querySelector('[data-field="job_title"]').value,
+          contact: row.querySelector('[data-field="contact"]').value,
+          work_status: row.querySelector('[data-field="work_status"]').value,
+          assigned_work_count: Number(row.querySelector('[data-field="assigned_work_count"]').value || 0),
+        };
+        const response = await fetch(`/admin/api/v1/employees/${encodeURIComponent(employeeId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setMessage("error", result.message || "직원 정보 저장에 실패했습니다.");
+          return;
+        }
+        setMessage("info", "직원 기본정보를 저장했습니다.");
+        await loadUsers();
+      }
+
+      document.getElementById("admin-refresh").addEventListener("click", loadUsers);
+      document.getElementById("admin-logout").addEventListener("click", async () => {
+        await fetch("/admin/api/v1/auth/logout", { method: "POST" });
+        window.location.href = "/admin/login";
+      });
+
+      usersBody.addEventListener("click", async (event) => {
+        const button = event.target instanceof HTMLElement ? event.target.closest("button[data-action]") : null;
+        if (!button) {
+          return;
+        }
+        const action = button.dataset.action;
+        const userId = button.dataset.userId;
+        if (!action || !userId) {
+          return;
+        }
+
+        const row = button.closest("tr");
+        if (!row) {
+          return;
+        }
+
+        if (action === "save-roles") {
+          await saveUserRoles(userId, row);
+          return;
+        }
+
+        if (action === "toggle-status") {
+          const response = await fetch(`/admin/api/v1/users/${encodeURIComponent(userId)}/status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: button.dataset.status }),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            setMessage("error", result.message || "계정 상태 변경에 실패했습니다.");
+            return;
+          }
+          setMessage("info", "계정 상태를 변경했습니다.");
+          await loadUsers();
+          return;
+        }
+
+        const route = action === "unlock"
+          ? `/admin/api/v1/users/${encodeURIComponent(userId)}/unlock`
+          : `/admin/api/v1/users/${encodeURIComponent(userId)}/reset-mfa`;
+        const response = await fetch(route, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) {
+          setMessage("error", result.message || "관리자 작업에 실패했습니다.");
+          return;
+        }
+        setMessage("info", action === "unlock" ? "계정 잠금을 해제했습니다." : "사용자 MFA를 초기화했습니다.");
+        await loadUsers();
+      });
+
+      employeesBody.addEventListener("click", async (event) => {
+        const button = event.target instanceof HTMLElement ? event.target.closest("button[data-action]") : null;
+        if (!button || button.dataset.action !== "save-employee") {
+          return;
+        }
+        const employeeId = button.dataset.employeeId;
+        const row = button.closest("tr");
+        if (!employeeId || !row) {
+          return;
+        }
+        await saveEmployee(employeeId, row);
+      });
+
+      loadUsers().catch(() => {
+        setMessage("error", "사용자 관리 화면 초기화에 실패했습니다.");
+      });
+    </script>
+  </body>
+</html>

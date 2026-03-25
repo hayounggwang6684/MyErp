@@ -56,6 +56,7 @@ function mapAuthenticatedSession(row: {
   idle_expires_at: Date;
   session_status: SessionStatus;
   user_id: string;
+  employee_id: string | null;
   username: string;
   password_hash: string;
   name: string;
@@ -70,6 +71,7 @@ function mapAuthenticatedSession(row: {
     sessionId: row.id,
     user: {
       id: row.user_id,
+      employeeId: row.employee_id,
       username: row.username,
       passwordHash: row.password_hash,
       name: row.name,
@@ -306,6 +308,7 @@ export class SessionService {
       idle_expires_at: Date;
       session_status: SessionStatus;
       user_id: string;
+      employee_id: string | null;
       username: string;
       password_hash: string;
       name: string;
@@ -329,6 +332,7 @@ export class SessionService {
          s.idle_expires_at,
          s.status as session_status,
          u.id as user_id,
+         u.employee_id,
          u.username,
          u.password_hash,
          u.name,

@@ -2,6 +2,7 @@ export type UserStatus = "ACTIVE" | "LOCKED" | "INACTIVE" | "PENDING_APPROVAL";
 
 export type AppUser = {
   id: string;
+  employeeId: string | null;
   username: string;
   passwordHash: string;
   name: string;
@@ -11,6 +12,19 @@ export type AppUser = {
   failedPasswordAttempts: number;
   lockedUntil: string | null;
   lastFailedPasswordAt: string | null;
+};
+
+export type EmployeeRecord = {
+  id: string;
+  employeeNo: string;
+  name: string;
+  department: string;
+  jobTitle: string;
+  contact: string;
+  workStatus: string;
+  assignedWorkCount: number;
+  linkedUsername: string | null;
+  linkedUserStatus: UserStatus | null;
 };
 
 export type MfaSecretStatus = "PENDING" | "ACTIVE" | "REVOKED";

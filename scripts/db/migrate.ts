@@ -8,8 +8,24 @@ async function migrate() {
   await query(`create schema if not exists audit`);
 
   await query(`
+    create table if not exists identity.employees (
+      id text primary key,
+      employee_no text not null unique,
+      name text not null,
+      department text not null default '운영부',
+      job_title text not null default '미지정',
+      contact text not null default '',
+      work_status text not null default '근무 중',
+      assigned_work_count integer not null default 0,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+
+  await query(`
     create table if not exists identity.users (
       id text primary key,
+      employee_id text null references identity.employees(id) on delete set null,
       username text not null unique,
       password_hash text not null,
       name text not null,
@@ -27,6 +43,11 @@ async function migrate() {
   await query(`
     alter table identity.users
     add column if not exists department text not null default '운영부'
+  `);
+
+  await query(`
+    alter table identity.users
+    add column if not exists employee_id text null references identity.employees(id) on delete set null
   `);
 
   await query(`
@@ -95,6 +116,8 @@ async function migrate() {
   `);
 
   await query(`create index if not exists idx_users_username on identity.users(username)`);
+  await query(`create index if not exists idx_users_employee_id on identity.users(employee_id)`);
+  await query(`create index if not exists idx_employees_employee_no on identity.employees(employee_no)`);
   await query(`create index if not exists idx_mfa_secrets_user_status on identity.user_mfa_secrets(user_id, status)`);
   await query(`create index if not exists idx_sessions_user_status on security.sessions(user_id, status)`);
   await query(`create index if not exists idx_mfa_challenges_session on security.mfa_challenges(session_id, status)`);

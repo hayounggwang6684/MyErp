@@ -1,9 +1,9 @@
 const dashboardTabDefinitions = [
-  { key: "customers", label: "고객관리" },
-  { key: "orders", label: "수주관리" },
-  { key: "work", label: "작업관리" },
-  { key: "inventory", label: "재고관리" },
-  { key: "staff", label: "직원관리", department: "관리부" },
+  { key: "customers", label: "고객관리", role: "CUSTOMER_MANAGE" },
+  { key: "orders", label: "수주관리", roles: ["ORDER_MANAGE", "PARTS_SALES"] },
+  { key: "work", label: "작업관리", role: "WORK_MANAGE" },
+  { key: "inventory", label: "재고관리", role: "INVENTORY_VIEW" },
+  { key: "staff", label: "직원관리", department: "관리부", role: "STAFF_VIEW" },
   { key: "settings", label: "설정" },
 ];
 
@@ -167,14 +167,41 @@ function renderSettingsScopeToggle(scope) {
 
 function getVisibleTabs() {
   const department = dashboardState.session?.data?.user?.department || "";
-  return dashboardTabDefinitions.filter((tab) => !tab.department || tab.department === department);
+  const roles = dashboardState.session?.data?.roles || [];
+  return dashboardTabDefinitions.filter((tab) => {
+    if (!tab.department && !tab.role) {
+      if (!tab.roles) {
+        return true;
+      }
+    }
+
+    if (roles.includes("SYSTEM_ADMIN")) {
+      return true;
+    }
+
+    if (tab.department && tab.department === department) {
+      return true;
+    }
+
+    if (tab.role && roles.includes(tab.role)) {
+      return true;
+    }
+
+    if (tab.roles && tab.roles.some((role) => roles.includes(role))) {
+      return true;
+    }
+
+    return false;
+  });
 }
 
 function getActiveTab() {
   const visibleTabs = getVisibleTabs();
   const exists = visibleTabs.some((tab) => tab.key === dashboardState.activeTab);
   if (!exists) {
-    dashboardState.activeTab = "orders";
+    dashboardState.activeTab = visibleTabs.some((tab) => tab.key === "orders")
+      ? "orders"
+      : visibleTabs[0]?.key || "settings";
   }
   return dashboardState.activeTab;
 }

@@ -320,6 +320,181 @@ code {
 }
 
 .dashboard-main {
+  padding: 28px 30px 40px;
+}
+
+.info-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 22px;
+}
+
+.panel-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1.4fr 1fr;
+}
+
+.info-card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(212, 219, 230, 0.96);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 22px;
+}
+
+.admin-wide-card {
+  grid-column: 1 / -1;
+}
+
+.eyebrow {
+  margin: 0 0 14px;
+  color: var(--brand-700);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.metric {
+  margin: 0 0 10px;
+  font-size: 38px;
+  line-height: 1;
+  color: var(--brand-700);
+}
+
+.detail {
+  margin: 0;
+  color: var(--ink-600);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.stack-list {
+  display: grid;
+  gap: 12px;
+}
+
+.stack-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--surface-100);
+  color: var(--ink-800);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  padding: 14px 10px;
+  border-bottom: 1px solid var(--line-300);
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+
+.data-table th {
+  color: var(--ink-600);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.muted-inline {
+  color: var(--ink-500);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.admin-inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.compact-button {
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.admin-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ordered-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-700);
+  line-height: 1.8;
+}
+
+.role-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface-100);
+  color: var(--ink-700);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.role-chip input {
+  margin: 0;
+}
+
+.role-save-button {
+  margin-top: 4px;
+}
+
+.admin-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-filter-field {
+  display: grid;
+  gap: 8px;
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.compact-input {
+  min-height: 42px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.compact-number {
+  min-width: 96px;
+}
+
+@media (max-width: 1200px) {
+  .panel-grid,
+  .info-grid,
+  .admin-summary-grid,
+  .admin-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dashboard-main {
   padding: 28px;
 }
 
