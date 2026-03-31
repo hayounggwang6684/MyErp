@@ -513,6 +513,42 @@ ipcMain.handle("auth:logout", async () => {
   return result;
 });
 ipcMain.handle("session:get", async () => apiRequest("GET", "/api/v1/sessions/me"));
+ipcMain.handle("customers:list", async (_event, search) =>
+  apiRequest("GET", `/api/v1/customers${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+);
+ipcMain.handle("customers:get", async (_event, customerId) => apiRequest("GET", `/api/v1/customers/${customerId}`));
+ipcMain.handle("customers:create", async (_event, payload) => apiRequest("POST", "/api/v1/customers", payload));
+ipcMain.handle("customers:add-contact", async (_event, customerId, payload) =>
+  apiRequest("POST", `/api/v1/customers/${customerId}/contacts`, payload),
+);
+ipcMain.handle("customers:add-address", async (_event, customerId, payload) =>
+  apiRequest("POST", `/api/v1/customers/${customerId}/addresses`, payload),
+);
+ipcMain.handle("customers:add-asset", async (_event, customerId, payload) =>
+  apiRequest("POST", `/api/v1/customers/${customerId}/assets`, payload),
+);
+ipcMain.handle("customers:add-equipment", async (_event, assetId, payload) =>
+  apiRequest("POST", `/api/v1/assets/${assetId}/equipments`, payload),
+);
+ipcMain.handle("customers:list-engine-models", async (_event, search) =>
+  apiRequest("GET", `/api/v1/master/engine-models${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+);
+ipcMain.handle("customers:create-engine-model", async (_event, payload) =>
+  apiRequest("POST", "/api/v1/master/engine-models", payload),
+);
+ipcMain.handle("customers:list-gearbox-models", async (_event, search) =>
+  apiRequest("GET", `/api/v1/master/gearbox-models${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+);
+ipcMain.handle("customers:create-gearbox-model", async (_event, payload) =>
+  apiRequest("POST", "/api/v1/master/gearbox-models", payload),
+);
+ipcMain.handle("customers:upload-file", async (_event, payload) => apiRequest("POST", "/api/v1/files", payload));
+ipcMain.handle("customers:link-file", async (_event, fileId, payload) =>
+  apiRequest("POST", `/api/v1/files/${fileId}/links`, payload),
+);
+ipcMain.handle("customers:extract-business-license", async (_event, customerId, payload) =>
+  apiRequest("POST", `/api/v1/customers/${customerId}/business-license/extract`, payload),
+);
 ipcMain.handle("updates:check", async () => checkForUpdates());
 
 app.whenReady().then(() => {

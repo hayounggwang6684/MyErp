@@ -1,6 +1,6 @@
 {
   "name": "sunjin-erp-demo",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "private": true,
   "description": "Sunjin ERP server and Electron client demo",
   "main": "client/main.js",
@@ -8,6 +8,7 @@
     "dev": "node --watch --import tsx src/app/server.ts",
     "start": "node --import tsx src/app/server.ts",
     "start:db:local": "DATABASE_URL='postgres://glory_ai_sever@localhost:5432/sunjin_erp' node --import tsx src/app/server.ts",
+    "start:db:prod": "HOST=127.0.0.1 DATABASE_URL='postgres://glory_ai_sever@localhost:5432/sunjin_erp' node --import tsx src/app/server.ts",
     "build": "tsc --noEmit",
     "db:migrate": "node --import tsx scripts/db/migrate.ts",
     "db:seed": "node --import tsx scripts/db/seed.ts",

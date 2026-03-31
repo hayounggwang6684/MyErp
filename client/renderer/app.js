@@ -8,23 +8,6 @@ const dashboardTabDefinitions = [
 ];
 
 const dashboardContent = {
-  customers: {
-    title: "고객관리",
-    summary: "신규 고객, 장기 미응답, 미수 고객과 최근 상담 상태를 한 화면에서 정리합니다.",
-    cards: [
-      { label: "신규 고객", value: "18", detail: "이번 주 신규 등록 6건" },
-      { label: "장기 미응답", value: "7", detail: "7일 이상 미응답 고객" },
-      { label: "미수 고객", value: "5", detail: "청구 후 30일 경과" },
-      { label: "최근 상담", value: "23", detail: "오늘 상담 이력 등록" },
-    ],
-    actions: ["고객 등록", "상담 이력", "장기 미응답 조회"],
-    columns: ["고객명", "담당자", "최근 상담일", "상태"],
-    rows: [
-      ["태성중공업", "김하영", "2026-03-24", "후속 견적 요청"],
-      ["유신엔진", "박민수", "2026-03-23", "장기 미응답"],
-      ["남해상사", "이현우", "2026-03-22", "미수 관리"],
-    ],
-  },
   orders: {
     title: "수주관리",
     summary: "견적부터 승인, 출하 예정 건까지 수주 흐름을 기준으로 현재 진행 상황을 확인합니다.",
@@ -123,6 +106,9 @@ const dashboardCards = document.getElementById("dashboard-cards");
 const dashboardActions = document.getElementById("dashboard-actions");
 const dashboardTableHead = document.getElementById("dashboard-table-head");
 const dashboardTableBody = document.getElementById("dashboard-table-body");
+const dashboardMainPane = document.getElementById("dashboard-main-pane");
+const customerWorkspace = document.getElementById("customer-workspace");
+const dashboardTablePanel = dashboardTableHead.closest(".dashboard-table-panel");
 const settingsAutoLogin = document.getElementById("settings-auto-login");
 const settingsShowUsername = document.getElementById("settings-show-username");
 const settingsRememberedUsername = document.getElementById("settings-remembered-username");
@@ -134,6 +120,20 @@ let dashboardState = {
   activeTab: "orders",
   session: null,
   preferences: null,
+};
+
+let customerState = {
+  loaded: false,
+  loading: false,
+  submitting: false,
+  search: "",
+  list: [],
+  selectedCustomerId: null,
+  selectedCustomer: null,
+  engineModels: [],
+  gearboxModels: [],
+  uploadedFile: null,
+  notice: "고객, 담당자, 선박/장비, 엔진/감속기 마스터를 한 화면에서 관리합니다.",
 };
 
 function setMessage(element, kind, message) {
@@ -169,10 +169,8 @@ function getVisibleTabs() {
   const department = dashboardState.session?.data?.user?.department || "";
   const roles = dashboardState.session?.data?.roles || [];
   return dashboardTabDefinitions.filter((tab) => {
-    if (!tab.department && !tab.role) {
-      if (!tab.roles) {
-        return true;
-      }
+    if (!tab.department && !tab.role && !tab.roles) {
+      return true;
     }
 
     if (roles.includes("SYSTEM_ADMIN")) {
@@ -261,26 +259,461 @@ function renderSettingsTab() {
   renderSettingsScopeToggle(preferences.testAccessScope || "AUTO");
 }
 
-function renderActiveTab() {
-  const activeTab = getActiveTab();
-  const isSettings = activeTab === "settings";
-  const content = dashboardContent[activeTab];
+function buildCustomerCards() {
+  const totalCustomers = customerState.list.length;
+  const selected = customerState.selectedCustomer;
+  const contactCount = selected?.contacts?.length || 0;
+  const assetCount = selected?.assets?.length || 0;
+  const equipmentCount = selected?.assets?.reduce((count, asset) => count + asset.equipments.length, 0) || 0;
 
-  document.getElementById("dashboard-main-pane").classList.toggle("hidden", isSettings);
-  document.getElementById("dashboard-settings-pane").classList.toggle("hidden", !isSettings);
+  return [
+    { label: "조회 고객", value: String(totalCustomers), detail: customerState.search ? "검색 결과 기준" : "전체 고객 목록" },
+    { label: "담당자", value: String(contactCount), detail: selected ? "선택 고객의 주소록" : "고객을 선택하세요" },
+    { label: "자산", value: String(assetCount), detail: selected ? "선박 또는 운용 장비" : "선택 고객 기준" },
+    { label: "탑재 장비", value: String(equipmentCount), detail: selected ? "엔진/감속기/기타 장비" : "선택 고객 기준" },
+  ];
+}
 
-  if (isSettings) {
-    dashboardSectionTitle.textContent = "설정";
-    dashboardSectionCopy.textContent = "자동 로그인, 기본 접속 범위 테스트값, 최근 로그인 아이디 표시 여부를 이 화면에서 조정합니다.";
-    renderSettingsTab();
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  return String(value).slice(0, 10);
+}
+
+function customerTypeLabel(value) {
+  return value === "SHIP_OWNER" ? "선사" : "일반 고객";
+}
+
+function assetTypeLabel(value) {
+  return value === "VESSEL" ? "선박" : "운용 장비";
+}
+
+function equipmentTypeLabel(value) {
+  if (value === "ENGINE") {
+    return "엔진";
+  }
+  if (value === "GEARBOX") {
+    return "감속기";
+  }
+  return "기타";
+}
+
+function renderCustomerWorkspace() {
+  const selected = customerState.selectedCustomer;
+  const customerItems = customerState.list
+    .map(
+      (customer) => `
+        <button type="button" class="customer-list-item${customer.id === customerState.selectedCustomerId ? " active" : ""}" data-customer-select="${customer.id}">
+          <span class="customer-list-title">${customer.customerName}</span>
+          <span class="customer-list-meta">${customerTypeLabel(customer.customerType)} · ${customer.businessRegistrationNo || "사업자번호 미입력"}</span>
+          <span class="customer-list-meta">${customer.primaryContactName || "담당자 미등록"} · 자산 ${customer.assetCount} · 장비 ${customer.equipmentCount}</span>
+        </button>
+      `,
+    )
+    .join("");
+
+  const extraction = selected?.latestExtraction;
+  const files = selected?.files || [];
+  const assetsMarkup = selected
+    ? selected.assets
+        .map(
+          (asset) => `
+            <article class="customer-nested-card">
+              <div class="stack-item">
+                <strong>${asset.assetName}</strong>
+                <span class="status-badge neutral">${assetTypeLabel(asset.assetType)}</span>
+              </div>
+              <p class="table-subtext">코드 ${asset.assetCode || "-"} / 등록 ${asset.registrationNo || "-"} / 위치 ${asset.locationDescription || "-"}</p>
+              <div class="stack-list">
+                ${asset.equipments.length
+                  ? asset.equipments
+                      .map(
+                        (equipment) => `
+                          <div class="stack-item">
+                            <span>${equipment.equipmentName} · ${equipmentTypeLabel(equipment.equipmentType)}</span>
+                            <span class="table-subtext">${equipment.modelName || equipment.manufacturer || "-"} / ${equipment.serialNo || "시리얼 미입력"}</span>
+                          </div>
+                        `,
+                      )
+                      .join("")
+                  : `<div class="table-subtext">등록된 장비가 없습니다.</div>`}
+              </div>
+            </article>
+          `,
+        )
+        .join("")
+    : `<div class="empty-inline">고객을 선택하면 선박/장비와 탑재 장비가 여기에 표시됩니다.</div>`;
+
+  const contactsMarkup = selected
+    ? selected.contacts.length
+      ? selected.contacts
+          .map(
+            (contact) => `
+              <div class="stack-item">
+                <span>${contact.contactName} · ${contact.contactRole === "OWNER" ? "대표" : contact.jobTitle || contact.contactRole}</span>
+                <span class="table-subtext">${contact.mobilePhone || contact.officePhone || "-"} / ${contact.email || "이메일 미입력"}</span>
+              </div>
+            `,
+          )
+          .join("")
+      : `<div class="empty-inline">담당자가 아직 없습니다.</div>`
+    : `<div class="empty-inline">선택 고객이 없습니다.</div>`;
+
+  const addressMarkup = selected
+    ? selected.addresses.length
+      ? selected.addresses
+          .map(
+            (address) => `
+              <div class="stack-item">
+                <span>${address.addressType}</span>
+                <span class="table-subtext">${[address.postalCode, address.addressLine1, address.addressLine2].filter(Boolean).join(" ")}</span>
+              </div>
+            `,
+          )
+          .join("")
+      : `<div class="empty-inline">등록된 주소가 없습니다.</div>`
+    : `<div class="empty-inline">선택 고객이 없습니다.</div>`;
+
+  const fileMarkup = files.length
+    ? files
+        .map(
+          (file) => `
+            <div class="stack-item">
+              <span>${file.originalName}</span>
+              <span class="table-subtext">${file.mimeType} / ${file.scanStatus}</span>
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="empty-inline">연결된 사업자등록증 파일이 없습니다.</div>`;
+
+  customerWorkspace.innerHTML = `
+    <section class="customer-card-grid">
+      ${buildCustomerCards()
+        .map(
+          (card) => `
+            <article class="metric-card">
+              <p class="eyebrow">${card.label}</p>
+              <p class="metric">${card.value}</p>
+              <p class="detail">${card.detail}</p>
+            </article>
+          `,
+        )
+        .join("")}
+    </section>
+
+    <section class="customer-layout">
+      <aside class="info-card customer-panel customer-list-panel">
+        <div class="stack-item">
+          <div>
+            <p class="eyebrow">고객 검색</p>
+            <h3 class="subsection-title">신규/기존 업체 판별</h3>
+          </div>
+          <button type="button" class="ghost-button" data-customer-refresh>새로고침</button>
+        </div>
+        <form id="customer-search-form" class="inline-form compact-form">
+          <input class="text-field" name="search" placeholder="업체명, 사업자번호, 담당자, 선박명, 엔진 시리얼" value="${customerState.search}" />
+          <button class="primary-button" type="submit">검색</button>
+        </form>
+        <div class="message info">${customerState.notice}</div>
+        <div class="customer-list">
+          ${customerItems || '<div class="empty-inline">검색 결과가 없습니다. 신규 업체를 바로 등록할 수 있습니다.</div>'}
+        </div>
+      </aside>
+
+      <section class="info-card customer-panel customer-detail-panel">
+        <div class="stack-item">
+          <div>
+            <p class="eyebrow">고객 상세</p>
+            <h3 class="subsection-title">${selected ? selected.customer.customerName : "고객을 선택하세요"}</h3>
+          </div>
+          ${selected ? `<span class="status-badge neutral">${customerTypeLabel(selected.customer.customerType)}</span>` : ""}
+        </div>
+        ${
+          selected
+            ? `
+              <div class="customer-section-grid">
+                <article class="customer-section-card">
+                  <h4 class="section-mini-title">기본정보</h4>
+                  <div class="detail-grid">
+                    <div><span>업체번호</span><strong>${selected.customer.customerNo}</strong></div>
+                    <div><span>사업자번호</span><strong>${selected.customer.businessRegistrationNo || "-"}</strong></div>
+                    <div><span>대표자</span><strong>${selected.customer.representativeName || "-"}</strong></div>
+                    <div><span>회사전화</span><strong>${selected.customer.companyPhone || "-"}</strong></div>
+                    <div><span>이메일</span><strong>${selected.customer.companyEmail || "-"}</strong></div>
+                    <div><span>개업일</span><strong>${formatDate(selected.customer.openingDate)}</strong></div>
+                    <div><span>업태</span><strong>${selected.customer.businessCategory || "-"}</strong></div>
+                    <div><span>종목</span><strong>${selected.customer.businessItem || "-"}</strong></div>
+                  </div>
+                  <p class="detail">${selected.customer.notes || "메모 없음"}</p>
+                </article>
+                <article class="customer-section-card">
+                  <div class="stack-item">
+                    <h4 class="section-mini-title">사업자등록증 / OCR</h4>
+                    <button type="button" class="secondary-button" data-customer-extract="${selected.customer.id}">OCR 재시도</button>
+                  </div>
+                  ${fileMarkup}
+                  ${
+                    extraction
+                      ? `
+                        <div class="ocr-grid">
+                          <div>
+                            <p class="eyebrow">자동 추출값</p>
+                            <div class="stack-list">
+                              <div class="stack-item"><span>사업자번호</span><span>${extraction.extractedRegistrationNo || "-"}</span></div>
+                              <div class="stack-item"><span>상호</span><span>${extraction.extractedCompanyName || "-"}</span></div>
+                              <div class="stack-item"><span>대표자</span><span>${extraction.extractedRepresentativeName || "-"}</span></div>
+                              <div class="stack-item"><span>주소</span><span>${extraction.extractedAddress || "-"}</span></div>
+                              <div class="stack-item"><span>업태/종목</span><span>${[extraction.extractedBusinessCategory, extraction.extractedBusinessItem].filter(Boolean).join(" / ") || "-"}</span></div>
+                              <div class="stack-item"><span>개업일</span><span>${extraction.extractedOpeningDate || "-"}</span></div>
+                            </div>
+                          </div>
+                          <div>
+                            <p class="eyebrow">확정 저장값</p>
+                            <div class="stack-list">
+                              <div class="stack-item"><span>사업자번호</span><span>${selected.customer.businessRegistrationNo || "-"}</span></div>
+                              <div class="stack-item"><span>상호</span><span>${selected.customer.customerName || "-"}</span></div>
+                              <div class="stack-item"><span>대표자</span><span>${selected.customer.representativeName || "-"}</span></div>
+                              <div class="stack-item"><span>주소</span><span>${selected.addresses[0] ? [selected.addresses[0].addressLine1, selected.addresses[0].addressLine2].filter(Boolean).join(" ") : "-"}</span></div>
+                              <div class="stack-item"><span>업태/종목</span><span>${[selected.customer.businessCategory, selected.customer.businessItem].filter(Boolean).join(" / ") || "-"}</span></div>
+                              <div class="stack-item"><span>개업일</span><span>${formatDate(selected.customer.openingDate)}</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      `
+                      : `<div class="empty-inline">OCR 결과가 아직 없습니다. 업로드 후 재시도할 수 있습니다.</div>`
+                  }
+                </article>
+                <article class="customer-section-card">
+                  <h4 class="section-mini-title">담당자 / 주소록</h4>
+                  <div class="stack-list">${contactsMarkup}</div>
+                </article>
+                <article class="customer-section-card">
+                  <h4 class="section-mini-title">주소</h4>
+                  <div class="stack-list">${addressMarkup}</div>
+                </article>
+                <article class="customer-section-card customer-assets-block">
+                  <h4 class="section-mini-title">자산 / 탑재 장비</h4>
+                  <div class="stack-list">${assetsMarkup}</div>
+                </article>
+              </div>
+            `
+            : '<div class="empty-inline customer-empty">좌측 목록에서 고객을 고르거나 우측 등록 패널에서 신규 업체를 먼저 등록하세요.</div>'
+        }
+      </section>
+
+      <aside class="info-card customer-panel customer-form-panel">
+        <div>
+          <p class="eyebrow">빠른 등록</p>
+          <h3 class="subsection-title">신규 업체 단계형 입력</h3>
+        </div>
+
+        <article class="customer-form-block">
+          <h4 class="section-mini-title">1. 사업자등록증 업로드 / OCR 보조</h4>
+          <form id="customer-file-form" class="stack-form">
+            <input class="text-field" name="original_name" placeholder="파일명 또는 문서명" value="${customerState.uploadedFile?.originalName || "business-license.txt"}" />
+            <textarea class="text-area" name="ocr_source_text" placeholder="OCR용 텍스트를 붙여넣거나 사업자등록증 주요 내용을 입력하세요.">${customerState.uploadedFile?.metadata?.ocr_source_text || ""}</textarea>
+            <button class="secondary-button" type="submit">${customerState.uploadedFile ? "업로드 갱신" : "파일 메타데이터 저장"}</button>
+          </form>
+          <p class="table-subtext">${customerState.uploadedFile ? `저장됨: ${customerState.uploadedFile.originalName}` : "텍스트를 함께 저장하면 OCR 재시도 시 자동 추출에 사용됩니다."}</p>
+        </article>
+
+        <article class="customer-form-block">
+          <h4 class="section-mini-title">2. 고객 기본정보</h4>
+          <form id="customer-create-form" class="stack-form">
+            <select class="text-field" name="customer_type">
+              <option value="SHIP_OWNER">선사</option>
+              <option value="GENERAL">일반 고객</option>
+            </select>
+            <input class="text-field" name="customer_name" placeholder="업체명" required />
+            <input class="text-field" name="business_registration_no" placeholder="사업자번호" />
+            <input class="text-field" name="representative_name" placeholder="대표자명" />
+            <input class="text-field" name="company_phone" placeholder="회사 전화번호" />
+            <input class="text-field" name="company_email" placeholder="대표 이메일" />
+            <input class="text-field" name="business_category" placeholder="업태" />
+            <input class="text-field" name="business_item" placeholder="종목" />
+            <input class="text-field" name="opening_date" type="date" />
+            <textarea class="text-area" name="notes" placeholder="고객 메모"></textarea>
+            <button class="primary-button" type="submit">신규 업체 등록</button>
+          </form>
+        </article>
+
+        <article class="customer-form-block">
+          <h4 class="section-mini-title">3. 담당자 / 주소록</h4>
+          <form id="customer-contact-form" class="stack-form">
+            <input class="text-field" name="contact_name" placeholder="이름" ${selected ? "" : "disabled"} />
+            <select class="text-field" name="contact_role" ${selected ? "" : "disabled"}>
+              <option value="OWNER">대표</option>
+              <option value="STAFF">실무자</option>
+              <option value="MANAGER">관리자</option>
+              <option value="ACCOUNTING">회계</option>
+            </select>
+            <input class="text-field" name="department_name" placeholder="부서" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="job_title" placeholder="직책" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="mobile_phone" placeholder="휴대폰" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="office_phone" placeholder="회사 전화" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="email" placeholder="이메일" ${selected ? "" : "disabled"} />
+            <label class="checkbox-row compact-checkbox">
+              <input name="is_primary" type="checkbox" ${selected ? "" : "disabled"} />
+              <span>기본 담당자로 지정</span>
+            </label>
+            <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>담당자 추가</button>
+          </form>
+        </article>
+
+        <article class="customer-form-block">
+          <h4 class="section-mini-title">4. 주소 등록</h4>
+          <form id="customer-address-form" class="stack-form">
+            <select class="text-field" name="address_type" ${selected ? "" : "disabled"}>
+              <option value="BUSINESS">사업장</option>
+              <option value="BILLING">청구지</option>
+              <option value="SITE">현장 주소</option>
+              <option value="VESSEL_MANAGEMENT">선박 관리지</option>
+            </select>
+            <input class="text-field" name="postal_code" placeholder="우편번호" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="address_line_1" placeholder="기본 주소" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="address_line_2" placeholder="상세 주소" ${selected ? "" : "disabled"} />
+            <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>주소 추가</button>
+          </form>
+        </article>
+
+        <article class="customer-form-block">
+          <h4 class="section-mini-title">5. 자산 등록</h4>
+          <form id="customer-asset-form" class="stack-form">
+            <select class="text-field" name="asset_type" ${selected ? "" : "disabled"}>
+              <option value="VESSEL">선박</option>
+              <option value="SITE_EQUIPMENT">일반 운용 장비</option>
+            </select>
+            <input class="text-field" name="asset_name" placeholder="자산명" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="asset_code" placeholder="자산 코드" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="registration_no" placeholder="선박/설비 등록번호" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="imo_no" placeholder="IMO 번호 (선박일 때)" ${selected ? "" : "disabled"} />
+            <input class="text-field" name="location_description" placeholder="운용 위치" ${selected ? "" : "disabled"} />
+            <textarea class="text-area" name="notes" placeholder="자산 메모" ${selected ? "" : "disabled"}></textarea>
+            <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>자산 추가</button>
+          </form>
+        </article>
+
+        <article class="customer-form-block">
+          <h4 class="section-mini-title">6. 탑재 장비 등록</h4>
+          <form id="customer-equipment-form" class="stack-form">
+            <select class="text-field" name="asset_id" ${selected?.assets?.length ? "" : "disabled"}>
+              <option value="">자산 선택</option>
+              ${(selected?.assets || []).map((asset) => `<option value="${asset.id}">${asset.assetName}</option>`).join("")}
+            </select>
+            <select class="text-field" name="equipment_type" ${selected?.assets?.length ? "" : "disabled"}>
+              <option value="ENGINE">엔진</option>
+              <option value="GEARBOX">감속기</option>
+              <option value="OTHER">기타</option>
+            </select>
+            <input class="text-field" name="equipment_name" placeholder="장비명" ${selected?.assets?.length ? "" : "disabled"} />
+            <input class="text-field" name="serial_no" placeholder="시리얼 번호" ${selected?.assets?.length ? "" : "disabled"} />
+            <input class="text-field" name="installation_position" placeholder="설치 위치" ${selected?.assets?.length ? "" : "disabled"} />
+            <select class="text-field" name="engine_model_id" ${selected?.assets?.length ? "" : "disabled"}>
+              <option value="">엔진 모델 선택</option>
+              ${customerState.engineModels.map((model) => `<option value="${model.id}">${model.manufacturer} ${model.modelName}</option>`).join("")}
+            </select>
+            <select class="text-field" name="gearbox_model_id" ${selected?.assets?.length ? "" : "disabled"}>
+              <option value="">감속기 모델 선택</option>
+              ${customerState.gearboxModels.map((model) => `<option value="${model.id}">${model.manufacturer} ${model.modelName}</option>`).join("")}
+            </select>
+            <input class="text-field" name="manufacturer" placeholder="제조사" ${selected?.assets?.length ? "" : "disabled"} />
+            <input class="text-field" name="model_name" placeholder="현장 표기 모델명" ${selected?.assets?.length ? "" : "disabled"} />
+            <textarea class="text-area" name="notes" placeholder="장비 메모" ${selected?.assets?.length ? "" : "disabled"}></textarea>
+            <button class="secondary-button" type="submit" ${selected?.assets?.length ? "" : "disabled"}>장비 추가</button>
+          </form>
+        </article>
+
+        <article class="customer-form-block">
+          <h4 class="section-mini-title">7. 엔진 / 감속기 마스터 추가</h4>
+          <div class="master-form-grid">
+            <form id="engine-model-form" class="stack-form">
+              <p class="table-subtext">엔진 모델</p>
+              <input class="text-field" name="manufacturer" placeholder="제조사" />
+              <input class="text-field" name="model_name" placeholder="모델명" />
+              <input class="text-field" name="engine_type" placeholder="형식" />
+              <input class="text-field" name="fuel_type" placeholder="연료" />
+              <input class="text-field" name="power_rating" placeholder="출력" />
+              <button class="secondary-button" type="submit">엔진 모델 추가</button>
+            </form>
+            <form id="gearbox-model-form" class="stack-form">
+              <p class="table-subtext">감속기 모델</p>
+              <input class="text-field" name="manufacturer" placeholder="제조사" />
+              <input class="text-field" name="model_name" placeholder="모델명" />
+              <input class="text-field" name="gear_type" placeholder="형식" />
+              <input class="text-field" name="gear_ratio" placeholder="감속비" />
+              <input class="text-field" name="torque_rating" placeholder="토크" />
+              <button class="secondary-button" type="submit">감속기 모델 추가</button>
+            </form>
+          </div>
+        </article>
+      </aside>
+    </section>
+  `;
+}
+
+async function refreshCustomerWorkspace(options = {}) {
+  if (dashboardState.activeTab !== "customers") {
     return;
   }
 
-  dashboardSectionTitle.textContent = content.title;
-  dashboardSectionCopy.textContent = content.summary;
-  renderMetricCards(content.cards);
-  renderActions(content.actions);
-  renderTable(content.columns, content.rows);
+  if (options.search !== undefined) {
+    customerState.search = options.search;
+  }
+
+  customerState.loading = true;
+  customerState.notice = options.notice || customerState.notice;
+  renderCustomerWorkspace();
+
+  try {
+    const [customersResult, engineModelsResult, gearboxModelsResult] = await Promise.all([
+      window.erpClient.listCustomers(customerState.search),
+      window.erpClient.listEngineModels(""),
+      window.erpClient.listGearboxModels(""),
+    ]);
+
+    customerState.list = customersResult.data || [];
+    customerState.engineModels = engineModelsResult.data || [];
+    customerState.gearboxModels = gearboxModelsResult.data || [];
+    customerState.loaded = true;
+
+    if (!customerState.selectedCustomerId && customerState.list[0]) {
+      customerState.selectedCustomerId = customerState.list[0].id;
+    }
+
+    if (customerState.selectedCustomerId) {
+      const detailResult = await window.erpClient.getCustomer(customerState.selectedCustomerId);
+      customerState.selectedCustomer = detailResult.data;
+    } else {
+      customerState.selectedCustomer = null;
+    }
+
+    customerState.notice = options.notice || "중복 후보가 있으면 검색 목록에서 먼저 확인한 뒤 신규 업체를 등록하세요.";
+  } catch (error) {
+    customerState.notice = error.message || "고객관리 데이터를 불러오지 못했습니다.";
+  } finally {
+    customerState.loading = false;
+    renderCustomerWorkspace();
+  }
+}
+
+async function loadCustomerDetail(customerId, notice) {
+  customerState.selectedCustomerId = customerId;
+  customerState.selectedCustomer = null;
+  customerState.notice = notice || customerState.notice;
+  renderCustomerWorkspace();
+
+  try {
+    const result = await window.erpClient.getCustomer(customerId);
+    customerState.selectedCustomer = result.data;
+    customerState.notice = notice || customerState.notice;
+  } catch (error) {
+    customerState.notice = error.message || "고객 상세를 불러오지 못했습니다.";
+  }
+
+  renderCustomerWorkspace();
 }
 
 async function saveDashboardPreference(partial, successMessage) {
@@ -369,6 +802,147 @@ async function attemptAutoLogin() {
   document.getElementById("login-id").value = preferences.showRememberedUsername ? preferences.rememberedUsername : "";
   setMessage(loginFeedback, "info", "최근 로그인 계정이 준비되었습니다.");
   return false;
+}
+
+function renderActiveTab() {
+  const activeTab = getActiveTab();
+  const isSettings = activeTab === "settings";
+  const isCustomers = activeTab === "customers";
+  const content = dashboardContent[activeTab];
+
+  document.getElementById("dashboard-main-pane").classList.toggle("hidden", isSettings);
+  document.getElementById("dashboard-settings-pane").classList.toggle("hidden", !isSettings);
+  customerWorkspace.classList.toggle("hidden", !isCustomers);
+  dashboardCards.classList.toggle("hidden", isCustomers);
+  dashboardTablePanel.classList.toggle("hidden", isCustomers);
+
+  if (isSettings) {
+    dashboardSectionTitle.textContent = "설정";
+    dashboardSectionCopy.textContent = "자동 로그인, 기본 접속 범위 테스트값, 최근 로그인 아이디 표시 여부를 이 화면에서 조정합니다.";
+    renderSettingsTab();
+    return;
+  }
+
+  if (isCustomers) {
+    dashboardSectionTitle.textContent = "고객관리";
+    dashboardSectionCopy.textContent = "신규/기존 업체 판별부터 사업자등록증, 담당자, 선박/운용 장비, 탑재 장비, 엔진/감속기 마스터까지 한 흐름으로 관리합니다.";
+    dashboardActions.innerHTML = `
+      <button type="button" class="secondary-button action-button" data-customer-refresh>목록 새로고침</button>
+      <button type="button" class="secondary-button action-button" data-customer-extract="${customerState.selectedCustomerId || ""}" ${customerState.selectedCustomerId ? "" : "disabled"}>OCR 재시도</button>
+    `;
+    renderCustomerWorkspace();
+    if (!customerState.loaded) {
+      refreshCustomerWorkspace().catch((error) => {
+        customerState.notice = error.message || "고객관리 데이터를 불러오지 못했습니다.";
+        renderCustomerWorkspace();
+      });
+    }
+    return;
+  }
+
+  dashboardSectionTitle.textContent = content.title;
+  dashboardSectionCopy.textContent = content.summary;
+  renderMetricCards(content.cards);
+  renderActions(content.actions);
+  renderTable(content.columns, content.rows);
+}
+
+async function handleUploadFile(form) {
+  const formData = Object.fromEntries(new FormData(form).entries());
+  const result = await window.erpClient.uploadFile({
+    domain: "customer",
+    entity_type: "business_license",
+    original_name: formData.original_name || "business-license.txt",
+    mime_type: "text/plain",
+    ocr_source_text: formData.ocr_source_text || "",
+  });
+  customerState.uploadedFile = result.data;
+  customerState.notice = `사업자등록증 메타데이터가 저장되었습니다: ${result.data.originalName}`;
+  renderCustomerWorkspace();
+}
+
+async function handleCreateCustomer(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  if (customerState.uploadedFile?.id) {
+    payload.business_license_file_id = customerState.uploadedFile.id;
+  }
+  const result = await window.erpClient.createCustomer(payload);
+  customerState.selectedCustomerId = result.data.customer?.customer?.id || null;
+  customerState.notice = result.data.duplicates?.length
+    ? `동일 사업자번호 후보 ${result.data.duplicates.length}건을 확인했습니다. 신규 등록은 완료되었습니다.`
+    : "신규 업체가 등록되었습니다.";
+  customerState.uploadedFile = null;
+  await refreshCustomerWorkspace({ notice: customerState.notice });
+  form.reset();
+}
+
+async function handleCreateContact(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const result = await window.erpClient.addCustomerContact(customerState.selectedCustomerId, payload);
+  customerState.selectedCustomer = result.data;
+  customerState.notice = "담당자가 추가되었습니다.";
+  form.reset();
+  renderCustomerWorkspace();
+}
+
+async function handleCreateAddress(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const result = await window.erpClient.addCustomerAddress(customerState.selectedCustomerId, payload);
+  customerState.selectedCustomer = result.data;
+  customerState.notice = "주소가 추가되었습니다.";
+  form.reset();
+  renderCustomerWorkspace();
+}
+
+async function handleCreateAsset(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const result = await window.erpClient.addCustomerAsset(customerState.selectedCustomerId, payload);
+  customerState.selectedCustomer = result.data;
+  customerState.notice = "자산이 추가되었습니다.";
+  form.reset();
+  renderCustomerWorkspace();
+}
+
+async function handleCreateEquipment(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  const assetId = payload.asset_id;
+  delete payload.asset_id;
+  const result = await window.erpClient.addAssetEquipment(assetId, payload);
+  customerState.selectedCustomer = result.data;
+  customerState.notice = "탑재 장비가 추가되었습니다.";
+  form.reset();
+  renderCustomerWorkspace();
+}
+
+async function handleCreateEngineModel(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  await window.erpClient.createEngineModel(payload);
+  customerState.notice = "엔진 마스터가 추가되었습니다.";
+  form.reset();
+  await refreshCustomerWorkspace({ notice: customerState.notice });
+}
+
+async function handleCreateGearboxModel(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  await window.erpClient.createGearboxModel(payload);
+  customerState.notice = "감속기 마스터가 추가되었습니다.";
+  form.reset();
+  await refreshCustomerWorkspace({ notice: customerState.notice });
+}
+
+async function handleExtractBusinessLicense(customerId) {
+  if (!customerId) {
+    return;
+  }
+
+  const payload = {};
+  if (customerState.uploadedFile?.id) {
+    payload.file_id = customerState.uploadedFile.id;
+  }
+
+  await window.erpClient.extractBusinessLicense(customerId, payload);
+  customerState.notice = "사업자등록증 OCR을 다시 실행했습니다.";
+  await loadCustomerDetail(customerId, customerState.notice);
 }
 
 document.getElementById("check-updates").addEventListener("click", async () => {
@@ -473,6 +1047,19 @@ document.getElementById("refresh-session").addEventListener("click", async () =>
 document.getElementById("logout").addEventListener("click", async () => {
   await window.erpClient.logout();
   dashboardState.activeTab = "orders";
+  customerState = {
+    loaded: false,
+    loading: false,
+    submitting: false,
+    search: "",
+    list: [],
+    selectedCustomerId: null,
+    selectedCustomer: null,
+    engineModels: [],
+    gearboxModels: [],
+    uploadedFile: null,
+    notice: "고객, 담당자, 선박/장비, 엔진/감속기 마스터를 한 화면에서 관리합니다.",
+  };
   await loadPreferences();
   setMessage(loginFeedback, "info", "로그아웃되었습니다.");
   showScreen("login");
@@ -487,6 +1074,97 @@ dashboardTabs.addEventListener("click", (event) => {
   dashboardState.activeTab = target.dataset.dashboardTab;
   renderDashboardTabs();
   renderActiveTab();
+});
+
+dashboardActions.addEventListener("click", async (event) => {
+  const refreshButton = event.target.closest("[data-customer-refresh]");
+  if (refreshButton) {
+    await refreshCustomerWorkspace({ notice: "고객 목록을 새로고침했습니다." });
+    return;
+  }
+
+  const extractButton = event.target.closest("[data-customer-extract]");
+  if (extractButton) {
+    await handleExtractBusinessLicense(extractButton.dataset.customerExtract);
+  }
+});
+
+dashboardMainPane.addEventListener("click", async (event) => {
+  const selectButton = event.target.closest("[data-customer-select]");
+  if (selectButton) {
+    await loadCustomerDetail(selectButton.dataset.customerSelect, "고객 상세를 불러왔습니다.");
+    return;
+  }
+
+  const refreshButton = event.target.closest("[data-customer-refresh]");
+  if (refreshButton) {
+    await refreshCustomerWorkspace({ notice: "고객 목록을 새로고침했습니다." });
+    return;
+  }
+
+  const extractButton = event.target.closest("[data-customer-extract]");
+  if (extractButton) {
+    await handleExtractBusinessLicense(extractButton.dataset.customerExtract);
+  }
+});
+
+dashboardMainPane.addEventListener("submit", async (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) {
+    return;
+  }
+
+  event.preventDefault();
+
+  try {
+    if (form.id === "customer-search-form") {
+      const formData = Object.fromEntries(new FormData(form).entries());
+      await refreshCustomerWorkspace({ search: String(formData.search || ""), notice: "검색 결과를 불러왔습니다." });
+      return;
+    }
+
+    if (form.id === "customer-file-form") {
+      await handleUploadFile(form);
+      return;
+    }
+
+    if (form.id === "customer-create-form") {
+      await handleCreateCustomer(form);
+      return;
+    }
+
+    if (form.id === "customer-contact-form") {
+      await handleCreateContact(form);
+      return;
+    }
+
+    if (form.id === "customer-address-form") {
+      await handleCreateAddress(form);
+      return;
+    }
+
+    if (form.id === "customer-asset-form") {
+      await handleCreateAsset(form);
+      return;
+    }
+
+    if (form.id === "customer-equipment-form") {
+      await handleCreateEquipment(form);
+      return;
+    }
+
+    if (form.id === "engine-model-form") {
+      await handleCreateEngineModel(form);
+      return;
+    }
+
+    if (form.id === "gearbox-model-form") {
+      await handleCreateGearboxModel(form);
+    }
+  } catch (error) {
+    customerState.notice = error.message || "고객관리 작업을 처리하지 못했습니다.";
+    renderCustomerWorkspace();
+  }
 });
 
 settingsAutoLogin.addEventListener("change", async () => {
