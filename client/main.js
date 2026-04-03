@@ -22,6 +22,18 @@ const defaultPreferences = {
   showRememberedUsername: true,
 };
 
+function getCloudflareAccessConfig() {
+  const accessConfig = clientConstants.cloudflareAccess || {};
+  const clientId = String(accessConfig.clientId || "").trim();
+  const clientSecret = String(accessConfig.clientSecret || "").trim();
+
+  return {
+    enabled: Boolean(accessConfig.enabled && clientId && clientSecret),
+    clientId,
+    clientSecret,
+  };
+}
+
 function getPreferencePath() {
   return path.join(app.getPath("userData"), "client-preferences.json");
 }
@@ -125,6 +137,7 @@ function persistCurrentSessionIfAllowed(scopeOverride) {
 async function apiRequest(method, routePath, body, options = {}) {
   const baseUrl = normalizeBaseUrl(clientConstants.serverUrl);
   const preferences = readPreferences();
+  const cloudflareAccess = getCloudflareAccessConfig();
 
   if (!baseUrl) {
     throw new Error("서버 URL이 설정되지 않았습니다.");
@@ -136,6 +149,11 @@ async function apiRequest(method, routePath, body, options = {}) {
 
   if (sessionCookie) {
     headers.Cookie = sessionCookie;
+  }
+
+  if (cloudflareAccess.enabled) {
+    headers["CF-Access-Client-Id"] = cloudflareAccess.clientId;
+    headers["CF-Access-Client-Secret"] = cloudflareAccess.clientSecret;
   }
 
   if (routePath === "/api/v1/auth/login") {
@@ -446,6 +464,8 @@ async function runStartupUpdateFlow() {
 ipcMain.handle("preference:get", () => readPreferences());
 ipcMain.handle("app:version", () => ({
   version: app.getVersion(),
+  cloudflareAccessEnabled: getCloudflareAccessConfig().enabled,
+  serverUrl: clientConstants.serverUrl,
 }));
 ipcMain.handle("preference:save", (_event, payload) => {
   const nextPreferences = writePreferences(payload);

@@ -1,0 +1,11 @@
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /Users/glory_ai_sever/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
+
+ingress:
+  - hostname: app.sunjincmk-dev.site
+    service: http://127.0.0.1:3000
+  - hostname: sunjincmk-dev.site
+    service: http_status:404
+  - hostname: www.sunjincmk-dev.site
+    service: http_status:404
+  - service: http_status:404

@@ -112,6 +112,7 @@ const dashboardTablePanel = dashboardTableHead.closest(".dashboard-table-panel")
 const settingsAutoLogin = document.getElementById("settings-auto-login");
 const settingsShowUsername = document.getElementById("settings-show-username");
 const settingsRememberedUsername = document.getElementById("settings-remembered-username");
+const settingsCloudflareAccess = document.getElementById("settings-cloudflare-access");
 const settingsScopeButtons = Array.from(document.querySelectorAll(".settings-scope-button"));
 const settingsFeedback = document.getElementById("settings-feedback");
 
@@ -120,6 +121,7 @@ let dashboardState = {
   activeTab: "orders",
   session: null,
   preferences: null,
+  appInfo: null,
 };
 
 let customerState = {
@@ -256,6 +258,11 @@ function renderSettingsTab() {
   settingsAutoLogin.checked = Boolean(preferences.autoLoginEnabled);
   settingsShowUsername.checked = Boolean(preferences.showRememberedUsername);
   settingsRememberedUsername.textContent = preferences.rememberedUsername || "저장된 아이디 없음";
+  setBadgeText(
+    settingsCloudflareAccess,
+    dashboardState.appInfo?.cloudflareAccessEnabled ? "활성" : "비활성",
+    dashboardState.appInfo?.cloudflareAccessEnabled ? "ok" : "neutral",
+  );
   renderSettingsScopeToggle(preferences.testAccessScope || "AUTO");
 }
 
@@ -730,10 +737,12 @@ async function saveDashboardPreference(partial, successMessage) {
 async function loadAppVersion() {
   try {
     const result = await window.erpClient.getAppVersion();
+    dashboardState.appInfo = result;
     const label = `버전 ${result.version}`;
     loginAppVersion.textContent = label;
     setBadgeText(dashboardAppVersion, result.version, "neutral");
   } catch {
+    dashboardState.appInfo = null;
     loginAppVersion.textContent = "버전 확인 실패";
     setBadgeText(dashboardAppVersion, "확인 실패", "warn");
   }

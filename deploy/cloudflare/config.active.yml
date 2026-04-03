@@ -1,0 +1,11 @@
+tunnel: 3c92ce4c-5bc0-4af2-a51d-558f4720b94d
+credentials-file: /Users/glory_ai_sever/.cloudflared/3c92ce4c-5bc0-4af2-a51d-558f4720b94d.json
+
+ingress:
+  - hostname: app.sunjincmk-dev.site
+    service: http://127.0.0.1:3000
+  - hostname: sunjincmk-dev.site
+    service: http_status:404
+  - hostname: www.sunjincmk-dev.site
+    service: http_status:404
+  - service: http_status:404

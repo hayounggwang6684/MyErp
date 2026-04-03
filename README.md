@@ -84,7 +84,10 @@ scripts/
 - 보안 문서는 인증, 사용자, 권한 통제를 설명한다.
 - 업무 흐름 문서는 실제 ERP 업무 처리 순서를 설명한다.
 - 개발 절차 문서는 브랜치, Windows 설치 테스트, GitHub Releases 배포 전 검증 절차를 설명한다.
-- 현재 운영 기준 서버 실행은 `npm run start:db:local`이며, 서버는 Mac mini에서 직접 패치하고 클라이언트는 GitHub Releases로 배포한다.
+- 현재 운영 기준 서버 실행은 `npm run start:db:prod`이며, 서버는 Mac mini에서 직접 패치하고 클라이언트는 GitHub Releases로 배포한다.
+- 외부 공개는 `deploy/cloudflare/README.md` 기준의 Cloudflare Tunnel 구성을 기본으로 한다.
+- Cloudflare Access를 앞단에 붙일 경우 Electron 클라이언트는 `client/constants.js`의 `cloudflareAccess` 설정으로 `CF-Access-Client-Id` / `CF-Access-Client-Secret` 헤더를 보낼 수 있다.
+- GitHub Actions로 Windows 클라이언트를 릴리즈할 때 Cloudflare Access를 같이 포함하려면 저장소 시크릿 `CLOUDFLARE_ACCESS_CLIENT_ID`, `CLOUDFLARE_ACCESS_CLIENT_SECRET`를 설정해야 한다.
 - Mac mini 로컬 관리자 인터페이스는 `운영 현황 / 사용자 관리 / 업데이트 관리 / 감사 로그` 4개 메뉴 구조를 기준으로 한다.
 - Mac mini 로컬 관리자 인터페이스의 `사용자 관리`는 `ERP 사용자 계정`과 `직원 기본정보`를 함께 관리하는 구조를 기준으로 한다.
 - 직원 전체가 ERP 사용자는 아니며, ERP 사용자 계정은 일부 직원에게만 연결된다.
