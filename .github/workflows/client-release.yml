@@ -48,16 +48,16 @@ jobs:
           CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
         run: |
           if [ -n "$CLOUDFLARE_ACCESS_CLIENT_ID" ] && [ -n "$CLOUDFLARE_ACCESS_CLIENT_SECRET" ]; then
-            cat > client/constants.local.js <<EOF
-            module.exports = {
-              serverUrl: "https://app.sunjincmk-dev.site",
-              cloudflareAccess: {
-                enabled: true,
-                clientId: "${CLOUDFLARE_ACCESS_CLIENT_ID}",
-                clientSecret: "${CLOUDFLARE_ACCESS_CLIENT_SECRET}",
-              },
-            };
-            EOF
+            printf '%s\n' \
+              'module.exports = {' \
+              '  serverUrl: "https://app.sunjincmk-dev.site",' \
+              '  cloudflareAccess: {' \
+              '    enabled: true,' \
+              "    clientId: \"${CLOUDFLARE_ACCESS_CLIENT_ID}\"," \
+              "    clientSecret: \"${CLOUDFLARE_ACCESS_CLIENT_SECRET}\"," \
+              '  },' \
+              '};' \
+              > client/constants.local.js
             echo "Cloudflare Access client config injected."
           else
             echo "Cloudflare Access secrets not configured. Building without Access client headers."
