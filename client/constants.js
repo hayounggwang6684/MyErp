@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const baseConfig = {
-  serverUrl: "https://app.sunjincmk-dev.site",
+  serverUrl: "https://sunjincmk-dev.site",
   updateRepoOwner: "hayounggwang6684",
   updateRepoName: "MyErp",
   cloudflareAccess: {

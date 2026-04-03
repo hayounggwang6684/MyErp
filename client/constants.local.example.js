@@ -1,5 +1,5 @@
 module.exports = {
-  serverUrl: "https://app.sunjincmk-dev.site",
+  serverUrl: "https://sunjincmk-dev.site",
   cloudflareAccess: {
     enabled: true,
     clientId: "발급받은 Client ID",

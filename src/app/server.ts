@@ -12,7 +12,7 @@ app.listen(env.port, host, () => {
     console.log("Windows test access URL: http://192.168.0.9:3000");
   }
   if (host === "127.0.0.1") {
-    console.log("Cloudflare Tunnel public URL: https://app.sunjincmk-dev.site");
+    console.log("Cloudflare Tunnel public URL: https://sunjincmk-dev.site");
   }
   console.log(`PostgreSQL status: ${postgresStatus.message}`);
 });

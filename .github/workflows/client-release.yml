@@ -50,7 +50,7 @@ jobs:
           if [ -n "$CLOUDFLARE_ACCESS_CLIENT_ID" ] && [ -n "$CLOUDFLARE_ACCESS_CLIENT_SECRET" ]; then
             printf '%s\n' \
               'module.exports = {' \
-              '  serverUrl: "https://app.sunjincmk-dev.site",' \
+              '  serverUrl: "https://sunjincmk-dev.site",' \
               '  cloudflareAccess: {' \
               '    enabled: true,' \
               "    clientId: \"${CLOUDFLARE_ACCESS_CLIENT_ID}\"," \

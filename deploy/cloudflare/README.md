@@ -1,6 +1,6 @@
 # Cloudflare Tunnel 준비 메모
 
-이 디렉터리는 `app.sunjincmk-dev.site`를 Cloudflare Tunnel로 연결할 때 사용할 설정 예시를 둔다.
+이 디렉터리는 `sunjincmk-dev.site`를 Cloudflare Tunnel로 연결할 때 사용할 설정 예시를 둔다.
 
 ## 전제 조건
 
@@ -42,8 +42,8 @@ cp deploy/cloudflare/config.yml.example ~/.cloudflared/config.yml
 ## 4. DNS 라우팅 생성
 
 ```bash
-cloudflared tunnel route dns sunjin-erp app.sunjincmk-dev.site
 cloudflared tunnel route dns sunjin-erp sunjincmk-dev.site
+cloudflared tunnel route dns sunjin-erp app.sunjincmk-dev.site
 cloudflared tunnel route dns sunjin-erp www.sunjincmk-dev.site
 ```
 
@@ -66,7 +66,7 @@ launchctl kickstart -k "gui/$(id -u)/com.sunjin.erp.cloudflared"
 
 ## 7. Cloudflare Access 추가 보호
 
-브라우저 직접 접근을 한 번 더 줄이려면 Cloudflare Zero Trust에서 `Self-hosted` 애플리케이션으로 `app.sunjincmk-dev.site`를 추가하고 `Service Auth` 정책을 건다.
+브라우저 직접 접근을 한 번 더 줄이려면 Cloudflare Zero Trust에서 `Self-hosted` 애플리케이션으로 `sunjincmk-dev.site`를 추가하고 `Service Auth` 정책을 건다.
 
 Cloudflare Access 서비스 토큰 방식은 아래 두 헤더를 초기 요청에 보낸다.
 
@@ -87,7 +87,7 @@ cloudflareAccess: {
 
 ```js
 module.exports = {
-  serverUrl: "https://app.sunjincmk-dev.site",
+  serverUrl: "https://sunjincmk-dev.site",
   cloudflareAccess: {
     enabled: true,
     clientId: "발급받은 Client ID",
@@ -100,7 +100,7 @@ module.exports = {
 
 권장 순서:
 
-1. Cloudflare Zero Trust에서 `Self-hosted` 앱 `app.sunjincmk-dev.site` 생성
+1. Cloudflare Zero Trust에서 `Self-hosted` 앱 `sunjincmk-dev.site` 생성
 2. `Service Token` 생성
 3. 앱 정책에 `Service Auth` 허용 규칙 연결
 4. 위 토큰 값을 `client/constants.local.js`에 반영
