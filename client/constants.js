@@ -13,18 +13,24 @@ const baseConfig = {
   forceAccessScopeForTesting: null,
 };
 
+const generatedOverridePath = path.join(__dirname, "constants.generated.js");
 const localOverridePath = path.join(__dirname, "constants.local.js");
 
-if (fs.existsSync(localOverridePath)) {
-  const localOverride = require(localOverridePath);
+function mergeConfig(overrideConfig) {
   module.exports = {
     ...baseConfig,
-    ...localOverride,
+    ...overrideConfig,
     cloudflareAccess: {
       ...baseConfig.cloudflareAccess,
-      ...(localOverride.cloudflareAccess || {}),
+      ...(overrideConfig.cloudflareAccess || {}),
     },
   };
+}
+
+if (fs.existsSync(generatedOverridePath)) {
+  mergeConfig(require(generatedOverridePath));
+} else if (fs.existsSync(localOverridePath)) {
+  mergeConfig(require(localOverridePath));
 } else {
   module.exports = baseConfig;
 }

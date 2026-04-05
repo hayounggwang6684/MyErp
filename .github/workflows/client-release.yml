@@ -57,7 +57,7 @@ jobs:
               "    clientSecret: \"${CLOUDFLARE_ACCESS_CLIENT_SECRET}\"," \
               '  },' \
               '};' \
-              > client/constants.local.js
+              > client/constants.generated.js
             echo "Cloudflare Access client config injected."
           else
             echo "Cloudflare Access secrets not configured. Building without Access client headers."
