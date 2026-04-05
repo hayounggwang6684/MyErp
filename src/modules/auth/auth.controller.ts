@@ -48,6 +48,25 @@ function buildSessionContext(request: Request) {
   };
 }
 
+function resolveAuthSessionId(request: Request) {
+  const cookieSessionId = readAuthCookie(request);
+  if (cookieSessionId) {
+    return cookieSessionId;
+  }
+
+  const headerSessionId = request.header("x-pending-session-id");
+  if (headerSessionId) {
+    return String(headerSessionId);
+  }
+
+  const bodySessionId = request.body?.pending_session_id;
+  if (bodySessionId) {
+    return String(bodySessionId);
+  }
+
+  return null;
+}
+
 type SessionPayload = {
   sessionId: string;
   expiresAt: string;
@@ -128,7 +147,7 @@ export class AuthController {
   };
 
   verifyMfa = async (request: Request, response: Response) => {
-    const sessionId = readAuthCookie(request);
+    const sessionId = resolveAuthSessionId(request);
     const result = await authService.verifyMfa(sessionId, String(request.body.otp_code || ""));
 
     if (!result.success) {
@@ -141,7 +160,7 @@ export class AuthController {
   };
 
   startMfaEnrollment = async (request: Request, response: Response) => {
-    const result = await authService.startMfaEnrollment(readAuthCookie(request));
+    const result = await authService.startMfaEnrollment(resolveAuthSessionId(request));
     if (!result.success) {
       sendJson(response, 401, result);
       return;
@@ -151,7 +170,7 @@ export class AuthController {
   };
 
   getMfaEnrollmentStatus = async (request: Request, response: Response) => {
-    const result = await authService.getMfaEnrollmentStatus(readAuthCookie(request));
+    const result = await authService.getMfaEnrollmentStatus(resolveAuthSessionId(request));
     if (!result.success) {
       sendJson(response, 401, result);
       return;
@@ -161,7 +180,10 @@ export class AuthController {
   };
 
   verifyMfaEnrollment = async (request: Request, response: Response) => {
-    const result = await authService.verifyMfaEnrollment(readAuthCookie(request), String(request.body.otp_code || ""));
+    const result = await authService.verifyMfaEnrollment(
+      resolveAuthSessionId(request),
+      String(request.body.otp_code || ""),
+    );
     if (!result.success) {
       sendJson(response, 401, result);
       return;

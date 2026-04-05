@@ -7,6 +7,7 @@ const clientConstants = require("./constants");
 let mainWindow = null;
 let splashWindow = null;
 let sessionCookie = "";
+let pendingSessionId = "";
 let runtimeAccessScope = "EXTERNAL";
 let startupUpdateMode = false;
 let splashOpenedAt = 0;
@@ -166,6 +167,10 @@ async function apiRequest(method, routePath, body, options = {}) {
   if (cloudflareAccess.enabled) {
     headers["CF-Access-Client-Id"] = cloudflareAccess.clientId;
     headers["CF-Access-Client-Secret"] = cloudflareAccess.clientSecret;
+  }
+
+  if (options.pendingSessionId) {
+    headers["x-pending-session-id"] = options.pendingSessionId;
   }
 
   if (routePath === "/api/v1/auth/login") {
@@ -513,6 +518,8 @@ ipcMain.handle("auth:login", async (_event, payload) =>
     const nextSessionId = result?.data?.pending_session_id || result?.data?.session_id;
     if (nextSessionId) {
       sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
+      pendingSessionId =
+        result?.data?.login_status === "AUTHENTICATED" ? "" : String(result.data.pending_session_id || "");
       if (result?.data?.login_status === "AUTHENTICATED" && runtimeAccessScope === "INTERNAL") {
         persistCurrentSessionIfAllowed(runtimeAccessScope);
       }
@@ -521,11 +528,14 @@ ipcMain.handle("auth:login", async (_event, payload) =>
   },
 );
 ipcMain.handle("auth:verify-mfa", async (_event, payload) => {
-  const result = await apiRequest("POST", "/api/v1/auth/mfa/verify", payload);
+  const result = await apiRequest("POST", "/api/v1/auth/mfa/verify", payload, {
+    pendingSessionId,
+  });
   runtimeAccessScope = result?.data?.session_context?.access_scope || runtimeAccessScope;
   const nextSessionId = result?.data?.session_id;
   if (nextSessionId) {
     sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
+    pendingSessionId = "";
     if (runtimeAccessScope === "INTERNAL") {
       persistCurrentSessionIfAllowed(runtimeAccessScope);
     }
@@ -533,18 +543,25 @@ ipcMain.handle("auth:verify-mfa", async (_event, payload) => {
   return result;
 });
 ipcMain.handle("auth:mfa-enrollment:start", async () =>
-  apiRequest("POST", "/api/v1/auth/mfa/enrollment/start"),
+  apiRequest("POST", "/api/v1/auth/mfa/enrollment/start", undefined, {
+    pendingSessionId,
+  }),
 );
 ipcMain.handle("auth:mfa-enrollment:status", async () =>
-  apiRequest("GET", "/api/v1/auth/mfa/enrollment/status"),
+  apiRequest("GET", "/api/v1/auth/mfa/enrollment/status", undefined, {
+    pendingSessionId,
+  }),
 );
 ipcMain.handle("auth:mfa-enrollment:verify", async (_event, payload) =>
   {
-    const result = await apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload);
+    const result = await apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload, {
+      pendingSessionId,
+    });
     runtimeAccessScope = result?.data?.session_context?.access_scope || runtimeAccessScope;
     const nextSessionId = result?.data?.session_id;
     if (nextSessionId) {
       sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
+      pendingSessionId = "";
       if (runtimeAccessScope === "INTERNAL") {
         persistCurrentSessionIfAllowed(runtimeAccessScope);
       }
@@ -555,6 +572,7 @@ ipcMain.handle("auth:mfa-enrollment:verify", async (_event, payload) =>
 ipcMain.handle("auth:logout", async () => {
   const result = await apiRequest("POST", "/api/v1/auth/logout");
   sessionCookie = "";
+  pendingSessionId = "";
   clearPersistedSession();
   return result;
 });
@@ -599,6 +617,7 @@ ipcMain.handle("updates:check", async () => checkForUpdates());
 
 app.whenReady().then(() => {
   sessionCookie = readPersistedSession();
+  pendingSessionId = "";
   registerAutoUpdater();
   createSplashWindow();
   runStartupUpdateFlow();
