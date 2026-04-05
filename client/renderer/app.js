@@ -95,6 +95,8 @@ const updateStatus = document.getElementById("update-status");
 const sessionUser = document.getElementById("session-user");
 const autoLoginCheckbox = document.getElementById("auto-login");
 const loginAppVersion = document.getElementById("login-app-version");
+const loginServerUrl = document.getElementById("login-server-url");
+const loginAccessMode = document.getElementById("login-access-mode");
 const dashboardAppVersion = document.getElementById("dashboard-app-version");
 const enrollmentQr = document.getElementById("enrollment-qr");
 const enrollmentSecret = document.getElementById("enrollment-secret");
@@ -740,10 +742,14 @@ async function loadAppVersion() {
     dashboardState.appInfo = result;
     const label = `버전 ${result.version}`;
     loginAppVersion.textContent = label;
+    loginServerUrl.textContent = `서버 주소 ${result.serverUrl}`;
+    loginAccessMode.textContent = `Cloudflare Access ${result.cloudflareAccessEnabled ? "활성" : "비활성"}`;
     setBadgeText(dashboardAppVersion, result.version, "neutral");
   } catch {
     dashboardState.appInfo = null;
     loginAppVersion.textContent = "버전 확인 실패";
+    loginServerUrl.textContent = "서버 주소 확인 실패";
+    loginAccessMode.textContent = "Cloudflare Access 확인 실패";
     setBadgeText(dashboardAppVersion, "확인 실패", "warn");
   }
 }
@@ -796,9 +802,13 @@ async function attemptAutoLogin() {
       setMessage(loginFeedback, "info", "외부망에서는 자동 로그인을 사용하지 않습니다.");
       return false;
     }
-  } catch {
+  } catch (error) {
     document.getElementById("login-id").value = preferences.showRememberedUsername ? preferences.rememberedUsername : "";
-    setMessage(loginFeedback, "warn", "접속 범위를 확인하지 못해 자동 로그인을 건너뜁니다.");
+    setMessage(
+      loginFeedback,
+      "warn",
+      `접속 범위를 확인하지 못해 자동 로그인을 건너뜁니다. ${error?.message || ""}`.trim(),
+    );
     return false;
   }
 

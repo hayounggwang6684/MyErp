@@ -119,6 +119,18 @@ function readSetCookieHeader(headers) {
   return headers.get("set-cookie") || "";
 }
 
+function sanitizeErrorSnippet(value) {
+  if (!value) {
+    return "";
+  }
+
+  return String(value)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
 function persistCurrentSessionIfAllowed(scopeOverride) {
   const preferences = readPreferences();
   const resolvedScope = scopeOverride || preferences.accessScope || runtimeAccessScope;
@@ -171,11 +183,18 @@ async function apiRequest(method, routePath, body, options = {}) {
     headers["x-demo-force-access-scope"] = forcedScope;
   }
 
-  const response = await fetch(`${baseUrl}${routePath}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response;
+  try {
+    response = await fetch(`${baseUrl}${routePath}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    throw new Error(
+      `[${routePath}] 네트워크 요청 실패: ${error?.message || "알 수 없는 네트워크 오류"}`,
+    );
+  }
 
   const setCookie = readSetCookieHeader(response.headers);
   if (setCookie) {
@@ -188,11 +207,18 @@ async function apiRequest(method, routePath, body, options = {}) {
     : await response.text();
 
   if (!response.ok) {
-    const message =
+    const messageFromJson =
       typeof responseBody === "object" && responseBody && "message" in responseBody
-        ? responseBody.message
-        : "요청 처리에 실패했습니다.";
-    throw new Error(String(message));
+        ? String(responseBody.message)
+        : "";
+    const rawSnippet =
+      typeof responseBody === "string"
+        ? sanitizeErrorSnippet(responseBody)
+        : sanitizeErrorSnippet(JSON.stringify(responseBody));
+    const errorSummary = [messageFromJson, rawSnippet].filter(Boolean).join(" / ");
+    throw new Error(
+      `[${routePath}] HTTP ${response.status}${errorSummary ? `: ${errorSummary}` : ""}`,
+    );
   }
 
   return responseBody;
