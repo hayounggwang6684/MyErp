@@ -1,6 +1,6 @@
 {
   "name": "sunjin-erp-demo",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "private": true,
   "description": "Sunjin ERP server and Electron client demo",
   "main": "client/main.js",
@@ -15,7 +15,9 @@
     "client:start": "electron .",
     "client:pack": "electron-builder --dir",
     "client:dist": "electron-builder --win nsis",
-    "client:release": "electron-builder --win nsis --publish always"
+    "client:dist:mac": "electron-builder --mac dmg zip --universal",
+    "client:release": "electron-builder --win nsis --publish always",
+    "client:release:mac": "electron-builder --mac dmg zip --universal --publish always"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -63,6 +65,24 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "category": "public.app-category.business",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": true,

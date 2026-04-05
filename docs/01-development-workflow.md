@@ -33,6 +33,7 @@
 | Mac 개발 PC | Codex를 사용한 코드 작성 |
 | GitHub Repository | 코드 저장소 및 버전 관리 |
 | Test PC (Windows) | 설치형 클라이언트 실제 실행 환경 테스트 |
+| Mac mini | 서버 운영 및 macOS 설치형 클라이언트 테스트 |
 
 개발 흐름 개요
 
@@ -189,7 +190,7 @@ git push origin main
 
 ### Step 9. 클라이언트 릴리즈 게시
 
-main 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트를 새 버전으로 배포한다.
+main 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트와 Mac mini용 macOS 설치형 클라이언트를 새 버전으로 배포한다.
 
 클라이언트 배포 순서:
 
@@ -198,14 +199,16 @@ main 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트를 새
 3. `package-lock.json`의 상단 버전 정보도 함께 맞추기
 4. `npm install`
 5. 릴리즈용 커밋 생성
-6. `npm run client:dist` 또는 `npm run client:release`
-7. 생성된 설치 파일, `latest.yml`, 관련 blockmap 파일을 GitHub Releases에 게시
-8. 설치된 클라이언트가 앱 시작 시 새 릴리즈를 감지하는지 확인
+6. Windows 자산은 `npm run client:dist` 또는 `npm run client:release`로 생성한다.
+7. macOS 자산은 `npm run client:dist:mac` 또는 `npm run client:release:mac`로 생성한다.
+8. 생성된 설치 파일과 업데이트 메타데이터(`latest.yml`, `latest-mac.yml`, 관련 blockmap 파일)를 GitHub Releases에 게시한다.
+9. 설치된 클라이언트가 앱 시작 시 새 릴리즈를 감지하는지 확인한다.
 
 원칙:
 
 - 서버를 먼저 배포하고 클라이언트를 나중에 배포한다.
 - 클라이언트 자동 업데이트는 GitHub Releases 자산이 업로드되어야 동작한다.
+- macOS 클라이언트는 `dmg` 설치 파일과 `zip` 업데이트 자산이 모두 필요하다.
 - 무서명 빌드는 SmartScreen 또는 백신 오탐 가능성을 포함해 테스트한다.
 
 클라이언트 패치 버전 기준:
