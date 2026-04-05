@@ -311,13 +311,15 @@ function equipmentTypeLabel(value) {
 
 function renderCustomerWorkspace() {
   const selected = customerState.selectedCustomer;
+  const primaryAddress = selected?.addresses?.[0];
+  const primaryContact = selected?.contacts?.[0];
   const customerItems = customerState.list
     .map(
-      (customer) => `
-        <button type="button" class="customer-list-item${customer.id === customerState.selectedCustomerId ? " active" : ""}" data-customer-select="${customer.id}">
-          <span class="customer-list-title">${customer.customerName}</span>
-          <span class="customer-list-meta">${customerTypeLabel(customer.customerType)} · ${customer.businessRegistrationNo || "사업자번호 미입력"}</span>
-          <span class="customer-list-meta">${customer.primaryContactName || "담당자 미등록"} · 자산 ${customer.assetCount} · 장비 ${customer.equipmentCount}</span>
+      (customer, index) => `
+        <button type="button" class="customer-list-row${customer.id === customerState.selectedCustomerId ? " active" : ""}" data-customer-select="${customer.id}">
+          <span class="customer-row-index">${index + 1}</span>
+          <span class="customer-row-company">${customer.customerName}</span>
+          <span class="customer-row-owner">${customer.primaryContactName || customer.representativeName || "-"}</span>
         </button>
       `,
     )
@@ -325,22 +327,47 @@ function renderCustomerWorkspace() {
 
   const extraction = selected?.latestExtraction;
   const files = selected?.files || [];
+  const customerInfoRows = selected
+    ? [
+        ["업체번호", selected.customer.customerNo || "-"],
+        ["업체명", selected.customer.customerName || "-"],
+        ["구분", customerTypeLabel(selected.customer.customerType)],
+        ["대표자명", selected.customer.representativeName || "-"],
+        ["사업자번호", selected.customer.businessRegistrationNo || "-"],
+        ["업태/종목", [selected.customer.businessCategory, selected.customer.businessItem].filter(Boolean).join(" / ") || "-"],
+        ["회사전화", selected.customer.companyPhone || "-"],
+        ["대표메일", selected.customer.companyEmail || "-"],
+        ["담당자", primaryContact?.contactName || selected.customer.primaryContactName || "-"],
+        ["담당 연락처", primaryContact?.mobilePhone || primaryContact?.officePhone || "-"],
+        ["주소", primaryAddress ? [primaryAddress.postalCode, primaryAddress.addressLine1, primaryAddress.addressLine2].filter(Boolean).join(" ") : "-"],
+        ["개업일", formatDate(selected.customer.openingDate)],
+      ]
+          .map(
+            ([label, value]) => `
+              <div class="customer-sheet-row">
+                <label>${label}</label>
+                <div>${value}</div>
+              </div>
+            `,
+          )
+          .join("")
+    : "";
   const assetsMarkup = selected
     ? selected.assets
         .map(
           (asset) => `
-            <article class="customer-nested-card">
-              <div class="stack-item">
+            <article class="customer-nested-card customer-asset-card">
+              <div class="customer-asset-head">
                 <strong>${asset.assetName}</strong>
                 <span class="status-badge neutral">${assetTypeLabel(asset.assetType)}</span>
               </div>
               <p class="table-subtext">코드 ${asset.assetCode || "-"} / 등록 ${asset.registrationNo || "-"} / 위치 ${asset.locationDescription || "-"}</p>
-              <div class="stack-list">
+              <div class="stack-list dense-stack-list">
                 ${asset.equipments.length
                   ? asset.equipments
                       .map(
                         (equipment) => `
-                          <div class="stack-item">
+                          <div class="customer-inline-item">
                             <span>${equipment.equipmentName} · ${equipmentTypeLabel(equipment.equipmentType)}</span>
                             <span class="table-subtext">${equipment.modelName || equipment.manufacturer || "-"} / ${equipment.serialNo || "시리얼 미입력"}</span>
                           </div>
@@ -360,7 +387,7 @@ function renderCustomerWorkspace() {
       ? selected.contacts
           .map(
             (contact) => `
-              <div class="stack-item">
+              <div class="customer-inline-item">
                 <span>${contact.contactName} · ${contact.contactRole === "OWNER" ? "대표" : contact.jobTitle || contact.contactRole}</span>
                 <span class="table-subtext">${contact.mobilePhone || contact.officePhone || "-"} / ${contact.email || "이메일 미입력"}</span>
               </div>
@@ -375,7 +402,7 @@ function renderCustomerWorkspace() {
       ? selected.addresses
           .map(
             (address) => `
-              <div class="stack-item">
+              <div class="customer-inline-item">
                 <span>${address.addressType}</span>
                 <span class="table-subtext">${[address.postalCode, address.addressLine1, address.addressLine2].filter(Boolean).join(" ")}</span>
               </div>
@@ -389,7 +416,7 @@ function renderCustomerWorkspace() {
     ? files
         .map(
           (file) => `
-            <div class="stack-item">
+            <div class="customer-inline-item">
               <span>${file.originalName}</span>
               <span class="table-subtext">${file.mimeType} / ${file.scanStatus}</span>
             </div>
@@ -399,265 +426,310 @@ function renderCustomerWorkspace() {
     : `<div class="empty-inline">연결된 사업자등록증 파일이 없습니다.</div>`;
 
   customerWorkspace.innerHTML = `
-    <section class="customer-card-grid">
-      ${buildCustomerCards()
-        .map(
-          (card) => `
-            <article class="metric-card">
-              <p class="eyebrow">${card.label}</p>
-              <p class="metric">${card.value}</p>
-              <p class="detail">${card.detail}</p>
-            </article>
-          `,
-        )
-        .join("")}
+    <section class="customer-toolbar info-card customer-toolbar-legacy">
+      <div class="customer-toolbar-main">
+        <div>
+          <p class="eyebrow">거래처 등록부</p>
+          <h3 class="subsection-title">고객 검색 · 등록 · 상세 관리</h3>
+        </div>
+        <div class="customer-toolbar-actions">
+          <button type="button" class="ghost-button" data-customer-refresh>목록 새로고침</button>
+          <button type="button" class="secondary-button" data-customer-extract="${selected?.customer?.id || ""}" ${selected?.customer?.id ? "" : "disabled"}>OCR 재시도</button>
+        </div>
+      </div>
+      <form id="customer-search-form" class="customer-searchbar">
+        <div class="customer-search-flags">
+          <label><input type="checkbox" checked disabled /> 자사</label>
+          <label><input type="checkbox" checked disabled /> 매출처</label>
+          <label><input type="checkbox" checked disabled /> 매입처</label>
+          <label><input type="checkbox" checked disabled /> 선사</label>
+          <label><input type="checkbox" checked disabled /> 엔진업체</label>
+        </div>
+        <input class="text-field" name="search" placeholder="업체명 / 대표자 / 사업자번호 / 선박명 / 엔진명으로 검색" value="${customerState.search}" />
+        <button class="primary-button" type="submit">검색</button>
+      </form>
+      <div class="customer-status-strip">
+        ${buildCustomerCards()
+          .map(
+            (card) => `
+              <article class="customer-status-chip">
+                <span class="customer-status-label">${card.label}</span>
+                <strong>${card.value}</strong>
+                <span>${card.detail}</span>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+      <div class="message info">${customerState.notice}</div>
     </section>
 
-    <section class="customer-layout">
+    <section class="customer-layout customer-layout-dense">
       <aside class="info-card customer-panel customer-list-panel">
-        <div class="stack-item">
+        <div class="stack-item customer-panel-heading">
           <div>
-            <p class="eyebrow">고객 검색</p>
-            <h3 class="subsection-title">신규/기존 업체 판별</h3>
+            <p class="eyebrow">거래처 목록</p>
+            <h3 class="subsection-title">검색 결과 ${customerState.list.length}건</h3>
           </div>
-          <button type="button" class="ghost-button" data-customer-refresh>새로고침</button>
+          <span class="status-badge neutral">${customerState.search ? "검색 적용" : "전체"}</span>
         </div>
-        <form id="customer-search-form" class="inline-form compact-form">
-          <input class="text-field" name="search" placeholder="업체명, 사업자번호, 담당자, 선박명, 엔진 시리얼" value="${customerState.search}" />
-          <button class="primary-button" type="submit">검색</button>
-        </form>
-        <div class="message info">${customerState.notice}</div>
-        <div class="customer-list">
-          ${customerItems || '<div class="empty-inline">검색 결과가 없습니다. 신규 업체를 바로 등록할 수 있습니다.</div>'}
+        <div class="customer-list-toolbar">
+          <span class="customer-list-filter active">거래처등록</span>
+          <span class="customer-list-filter">매출관리</span>
+          <span class="customer-list-filter">선박</span>
+        </div>
+        <div class="customer-list-table-head">
+          <span>순번</span>
+          <span>업체명</span>
+          <span>대표/담당</span>
+        </div>
+        <div class="customer-list-scroll">
+          <div class="customer-list">
+            ${customerItems || '<div class="empty-inline">검색 결과가 없습니다. 신규 업체를 바로 등록할 수 있습니다.</div>'}
+          </div>
         </div>
       </aside>
 
       <section class="info-card customer-panel customer-detail-panel">
-        <div class="stack-item">
+        <div class="stack-item customer-panel-heading">
           <div>
-            <p class="eyebrow">고객 상세</p>
+            <p class="eyebrow">기본정보</p>
             <h3 class="subsection-title">${selected ? selected.customer.customerName : "고객을 선택하세요"}</h3>
           </div>
           ${selected ? `<span class="status-badge neutral">${customerTypeLabel(selected.customer.customerType)}</span>` : ""}
         </div>
+        <div class="customer-record-tabs">
+          <button type="button" class="customer-record-tab active">기본정보</button>
+          <button type="button" class="customer-record-tab" disabled>선박/엔진</button>
+          <button type="button" class="customer-record-tab" disabled>문서/OCR</button>
+        </div>
         ${
           selected
             ? `
-              <div class="customer-section-grid">
-                <article class="customer-section-card">
-                  <h4 class="section-mini-title">기본정보</h4>
-                  <div class="detail-grid">
-                    <div><span>업체번호</span><strong>${selected.customer.customerNo}</strong></div>
-                    <div><span>사업자번호</span><strong>${selected.customer.businessRegistrationNo || "-"}</strong></div>
-                    <div><span>대표자</span><strong>${selected.customer.representativeName || "-"}</strong></div>
-                    <div><span>회사전화</span><strong>${selected.customer.companyPhone || "-"}</strong></div>
-                    <div><span>이메일</span><strong>${selected.customer.companyEmail || "-"}</strong></div>
-                    <div><span>개업일</span><strong>${formatDate(selected.customer.openingDate)}</strong></div>
-                    <div><span>업태</span><strong>${selected.customer.businessCategory || "-"}</strong></div>
-                    <div><span>종목</span><strong>${selected.customer.businessItem || "-"}</strong></div>
+              <div class="customer-detail-scroll">
+              <div class="customer-record-layout">
+                <section class="customer-record-sheet">
+                  <div class="customer-sheet-frame">
+                    <div class="customer-sheet-head">
+                      <span>기본정보 시트</span>
+                      <span>${selected.customer.customerNo}</span>
+                    </div>
+                    <div class="customer-sheet-grid">
+                      ${customerInfoRows}
+                    </div>
                   </div>
-                  <p class="detail">${selected.customer.notes || "메모 없음"}</p>
-                </article>
-                <article class="customer-section-card">
-                  <div class="stack-item">
-                    <h4 class="section-mini-title">사업자등록증 / OCR</h4>
-                    <button type="button" class="secondary-button" data-customer-extract="${selected.customer.id}">OCR 재시도</button>
-                  </div>
-                  ${fileMarkup}
-                  ${
-                    extraction
-                      ? `
-                        <div class="ocr-grid">
-                          <div>
-                            <p class="eyebrow">자동 추출값</p>
-                            <div class="stack-list">
-                              <div class="stack-item"><span>사업자번호</span><span>${extraction.extractedRegistrationNo || "-"}</span></div>
-                              <div class="stack-item"><span>상호</span><span>${extraction.extractedCompanyName || "-"}</span></div>
-                              <div class="stack-item"><span>대표자</span><span>${extraction.extractedRepresentativeName || "-"}</span></div>
-                              <div class="stack-item"><span>주소</span><span>${extraction.extractedAddress || "-"}</span></div>
-                              <div class="stack-item"><span>업태/종목</span><span>${[extraction.extractedBusinessCategory, extraction.extractedBusinessItem].filter(Boolean).join(" / ") || "-"}</span></div>
-                              <div class="stack-item"><span>개업일</span><span>${extraction.extractedOpeningDate || "-"}</span></div>
+
+                  <section class="customer-sheet-subgrid">
+                    <article class="customer-section-card">
+                      <h4 class="section-mini-title">담당자 / 주소록</h4>
+                      <div class="stack-list">${contactsMarkup}</div>
+                    </article>
+                    <article class="customer-section-card">
+                      <h4 class="section-mini-title">주소</h4>
+                      <div class="stack-list">${addressMarkup}</div>
+                    </article>
+                    <article class="customer-section-card customer-assets-block">
+                      <h4 class="section-mini-title">자산 / 탑재 장비</h4>
+                      <div class="stack-list">${assetsMarkup}</div>
+                    </article>
+                  </section>
+                </section>
+
+                <aside class="customer-memo-panel">
+                  <article class="customer-section-card">
+                    <div class="stack-item">
+                      <h4 class="section-mini-title">사업자등록증 / OCR</h4>
+                      <button type="button" class="secondary-button" data-customer-extract="${selected.customer.id}">OCR 재시도</button>
+                    </div>
+                    ${fileMarkup}
+                    ${
+                      extraction
+                        ? `
+                          <div class="ocr-grid">
+                            <div>
+                              <p class="eyebrow">자동 추출값</p>
+                              <div class="stack-list dense-stack-list">
+                                <div class="customer-inline-item"><span>사업자번호</span><span>${extraction.extractedRegistrationNo || "-"}</span></div>
+                                <div class="customer-inline-item"><span>상호</span><span>${extraction.extractedCompanyName || "-"}</span></div>
+                                <div class="customer-inline-item"><span>대표자</span><span>${extraction.extractedRepresentativeName || "-"}</span></div>
+                                <div class="customer-inline-item"><span>주소</span><span>${extraction.extractedAddress || "-"}</span></div>
+                                <div class="customer-inline-item"><span>업태/종목</span><span>${[extraction.extractedBusinessCategory, extraction.extractedBusinessItem].filter(Boolean).join(" / ") || "-"}</span></div>
+                                <div class="customer-inline-item"><span>개업일</span><span>${extraction.extractedOpeningDate || "-"}</span></div>
+                              </div>
+                            </div>
+                            <div>
+                              <p class="eyebrow">확정 저장값</p>
+                              <div class="stack-list dense-stack-list">
+                                <div class="customer-inline-item"><span>사업자번호</span><span>${selected.customer.businessRegistrationNo || "-"}</span></div>
+                                <div class="customer-inline-item"><span>상호</span><span>${selected.customer.customerName || "-"}</span></div>
+                                <div class="customer-inline-item"><span>대표자</span><span>${selected.customer.representativeName || "-"}</span></div>
+                                <div class="customer-inline-item"><span>주소</span><span>${primaryAddress ? [primaryAddress.addressLine1, primaryAddress.addressLine2].filter(Boolean).join(" ") : "-"}</span></div>
+                                <div class="customer-inline-item"><span>업태/종목</span><span>${[selected.customer.businessCategory, selected.customer.businessItem].filter(Boolean).join(" / ") || "-"}</span></div>
+                                <div class="customer-inline-item"><span>개업일</span><span>${formatDate(selected.customer.openingDate)}</span></div>
+                              </div>
                             </div>
                           </div>
-                          <div>
-                            <p class="eyebrow">확정 저장값</p>
-                            <div class="stack-list">
-                              <div class="stack-item"><span>사업자번호</span><span>${selected.customer.businessRegistrationNo || "-"}</span></div>
-                              <div class="stack-item"><span>상호</span><span>${selected.customer.customerName || "-"}</span></div>
-                              <div class="stack-item"><span>대표자</span><span>${selected.customer.representativeName || "-"}</span></div>
-                              <div class="stack-item"><span>주소</span><span>${selected.addresses[0] ? [selected.addresses[0].addressLine1, selected.addresses[0].addressLine2].filter(Boolean).join(" ") : "-"}</span></div>
-                              <div class="stack-item"><span>업태/종목</span><span>${[selected.customer.businessCategory, selected.customer.businessItem].filter(Boolean).join(" / ") || "-"}</span></div>
-                              <div class="stack-item"><span>개업일</span><span>${formatDate(selected.customer.openingDate)}</span></div>
-                            </div>
-                          </div>
-                        </div>
-                      `
-                      : `<div class="empty-inline">OCR 결과가 아직 없습니다. 업로드 후 재시도할 수 있습니다.</div>`
-                  }
-                </article>
-                <article class="customer-section-card">
-                  <h4 class="section-mini-title">담당자 / 주소록</h4>
-                  <div class="stack-list">${contactsMarkup}</div>
-                </article>
-                <article class="customer-section-card">
-                  <h4 class="section-mini-title">주소</h4>
-                  <div class="stack-list">${addressMarkup}</div>
-                </article>
-                <article class="customer-section-card customer-assets-block">
-                  <h4 class="section-mini-title">자산 / 탑재 장비</h4>
-                  <div class="stack-list">${assetsMarkup}</div>
-                </article>
+                        `
+                        : `<div class="empty-inline">OCR 결과가 아직 없습니다. 업로드 후 재시도할 수 있습니다.</div>`
+                    }
+                  </article>
+                </aside>
+              </div>
               </div>
             `
-            : '<div class="empty-inline customer-empty">좌측 목록에서 고객을 고르거나 우측 등록 패널에서 신규 업체를 먼저 등록하세요.</div>'
+            : '<div class="empty-inline customer-empty">좌측 거래처 목록에서 업체를 선택하거나 우측 등록 패널에서 신규 거래처를 먼저 등록하세요.</div>'
         }
       </section>
 
       <aside class="info-card customer-panel customer-form-panel">
-        <div>
-          <p class="eyebrow">빠른 등록</p>
-          <h3 class="subsection-title">신규 업체 단계형 입력</h3>
-        </div>
-
-        <article class="customer-form-block">
-          <h4 class="section-mini-title">1. 사업자등록증 업로드 / OCR 보조</h4>
-          <form id="customer-file-form" class="stack-form">
-            <input class="text-field" name="original_name" placeholder="파일명 또는 문서명" value="${customerState.uploadedFile?.originalName || "business-license.txt"}" />
-            <textarea class="text-area" name="ocr_source_text" placeholder="OCR용 텍스트를 붙여넣거나 사업자등록증 주요 내용을 입력하세요.">${customerState.uploadedFile?.metadata?.ocr_source_text || ""}</textarea>
-            <button class="secondary-button" type="submit">${customerState.uploadedFile ? "업로드 갱신" : "파일 메타데이터 저장"}</button>
-          </form>
-          <p class="table-subtext">${customerState.uploadedFile ? `저장됨: ${customerState.uploadedFile.originalName}` : "텍스트를 함께 저장하면 OCR 재시도 시 자동 추출에 사용됩니다."}</p>
-        </article>
-
-        <article class="customer-form-block">
-          <h4 class="section-mini-title">2. 고객 기본정보</h4>
-          <form id="customer-create-form" class="stack-form">
-            <select class="text-field" name="customer_type">
-              <option value="SHIP_OWNER">선사</option>
-              <option value="GENERAL">일반 고객</option>
-            </select>
-            <input class="text-field" name="customer_name" placeholder="업체명" required />
-            <input class="text-field" name="business_registration_no" placeholder="사업자번호" />
-            <input class="text-field" name="representative_name" placeholder="대표자명" />
-            <input class="text-field" name="company_phone" placeholder="회사 전화번호" />
-            <input class="text-field" name="company_email" placeholder="대표 이메일" />
-            <input class="text-field" name="business_category" placeholder="업태" />
-            <input class="text-field" name="business_item" placeholder="종목" />
-            <input class="text-field" name="opening_date" type="date" />
-            <textarea class="text-area" name="notes" placeholder="고객 메모"></textarea>
-            <button class="primary-button" type="submit">신규 업체 등록</button>
-          </form>
-        </article>
-
-        <article class="customer-form-block">
-          <h4 class="section-mini-title">3. 담당자 / 주소록</h4>
-          <form id="customer-contact-form" class="stack-form">
-            <input class="text-field" name="contact_name" placeholder="이름" ${selected ? "" : "disabled"} />
-            <select class="text-field" name="contact_role" ${selected ? "" : "disabled"}>
-              <option value="OWNER">대표</option>
-              <option value="STAFF">실무자</option>
-              <option value="MANAGER">관리자</option>
-              <option value="ACCOUNTING">회계</option>
-            </select>
-            <input class="text-field" name="department_name" placeholder="부서" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="job_title" placeholder="직책" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="mobile_phone" placeholder="휴대폰" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="office_phone" placeholder="회사 전화" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="email" placeholder="이메일" ${selected ? "" : "disabled"} />
-            <label class="checkbox-row compact-checkbox">
-              <input name="is_primary" type="checkbox" ${selected ? "" : "disabled"} />
-              <span>기본 담당자로 지정</span>
-            </label>
-            <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>담당자 추가</button>
-          </form>
-        </article>
-
-        <article class="customer-form-block">
-          <h4 class="section-mini-title">4. 주소 등록</h4>
-          <form id="customer-address-form" class="stack-form">
-            <select class="text-field" name="address_type" ${selected ? "" : "disabled"}>
-              <option value="BUSINESS">사업장</option>
-              <option value="BILLING">청구지</option>
-              <option value="SITE">현장 주소</option>
-              <option value="VESSEL_MANAGEMENT">선박 관리지</option>
-            </select>
-            <input class="text-field" name="postal_code" placeholder="우편번호" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="address_line_1" placeholder="기본 주소" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="address_line_2" placeholder="상세 주소" ${selected ? "" : "disabled"} />
-            <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>주소 추가</button>
-          </form>
-        </article>
-
-        <article class="customer-form-block">
-          <h4 class="section-mini-title">5. 자산 등록</h4>
-          <form id="customer-asset-form" class="stack-form">
-            <select class="text-field" name="asset_type" ${selected ? "" : "disabled"}>
-              <option value="VESSEL">선박</option>
-              <option value="SITE_EQUIPMENT">일반 운용 장비</option>
-            </select>
-            <input class="text-field" name="asset_name" placeholder="자산명" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="asset_code" placeholder="자산 코드" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="registration_no" placeholder="선박/설비 등록번호" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="imo_no" placeholder="IMO 번호 (선박일 때)" ${selected ? "" : "disabled"} />
-            <input class="text-field" name="location_description" placeholder="운용 위치" ${selected ? "" : "disabled"} />
-            <textarea class="text-area" name="notes" placeholder="자산 메모" ${selected ? "" : "disabled"}></textarea>
-            <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>자산 추가</button>
-          </form>
-        </article>
-
-        <article class="customer-form-block">
-          <h4 class="section-mini-title">6. 탑재 장비 등록</h4>
-          <form id="customer-equipment-form" class="stack-form">
-            <select class="text-field" name="asset_id" ${selected?.assets?.length ? "" : "disabled"}>
-              <option value="">자산 선택</option>
-              ${(selected?.assets || []).map((asset) => `<option value="${asset.id}">${asset.assetName}</option>`).join("")}
-            </select>
-            <select class="text-field" name="equipment_type" ${selected?.assets?.length ? "" : "disabled"}>
-              <option value="ENGINE">엔진</option>
-              <option value="GEARBOX">감속기</option>
-              <option value="OTHER">기타</option>
-            </select>
-            <input class="text-field" name="equipment_name" placeholder="장비명" ${selected?.assets?.length ? "" : "disabled"} />
-            <input class="text-field" name="serial_no" placeholder="시리얼 번호" ${selected?.assets?.length ? "" : "disabled"} />
-            <input class="text-field" name="installation_position" placeholder="설치 위치" ${selected?.assets?.length ? "" : "disabled"} />
-            <select class="text-field" name="engine_model_id" ${selected?.assets?.length ? "" : "disabled"}>
-              <option value="">엔진 모델 선택</option>
-              ${customerState.engineModels.map((model) => `<option value="${model.id}">${model.manufacturer} ${model.modelName}</option>`).join("")}
-            </select>
-            <select class="text-field" name="gearbox_model_id" ${selected?.assets?.length ? "" : "disabled"}>
-              <option value="">감속기 모델 선택</option>
-              ${customerState.gearboxModels.map((model) => `<option value="${model.id}">${model.manufacturer} ${model.modelName}</option>`).join("")}
-            </select>
-            <input class="text-field" name="manufacturer" placeholder="제조사" ${selected?.assets?.length ? "" : "disabled"} />
-            <input class="text-field" name="model_name" placeholder="현장 표기 모델명" ${selected?.assets?.length ? "" : "disabled"} />
-            <textarea class="text-area" name="notes" placeholder="장비 메모" ${selected?.assets?.length ? "" : "disabled"}></textarea>
-            <button class="secondary-button" type="submit" ${selected?.assets?.length ? "" : "disabled"}>장비 추가</button>
-          </form>
-        </article>
-
-        <article class="customer-form-block">
-          <h4 class="section-mini-title">7. 엔진 / 감속기 마스터 추가</h4>
-          <div class="master-form-grid">
-            <form id="engine-model-form" class="stack-form">
-              <p class="table-subtext">엔진 모델</p>
-              <input class="text-field" name="manufacturer" placeholder="제조사" />
-              <input class="text-field" name="model_name" placeholder="모델명" />
-              <input class="text-field" name="engine_type" placeholder="형식" />
-              <input class="text-field" name="fuel_type" placeholder="연료" />
-              <input class="text-field" name="power_rating" placeholder="출력" />
-              <button class="secondary-button" type="submit">엔진 모델 추가</button>
-            </form>
-            <form id="gearbox-model-form" class="stack-form">
-              <p class="table-subtext">감속기 모델</p>
-              <input class="text-field" name="manufacturer" placeholder="제조사" />
-              <input class="text-field" name="model_name" placeholder="모델명" />
-              <input class="text-field" name="gear_type" placeholder="형식" />
-              <input class="text-field" name="gear_ratio" placeholder="감속비" />
-              <input class="text-field" name="torque_rating" placeholder="토크" />
-              <button class="secondary-button" type="submit">감속기 모델 추가</button>
-            </form>
+        <div class="customer-panel-heading">
+          <div>
+            <p class="eyebrow">등록 패널</p>
+            <h3 class="subsection-title">신규 업체 단계형 입력</h3>
           </div>
-        </article>
+          <span class="status-badge neutral">입력 워크시트</span>
+        </div>
+        <div class="customer-form-scroll">
+          <article class="customer-form-block">
+            <h4 class="section-mini-title">1. 사업자등록증 업로드 / OCR 보조</h4>
+            <form id="customer-file-form" class="stack-form">
+              <input class="text-field" name="original_name" placeholder="파일명 또는 문서명" value="${customerState.uploadedFile?.originalName || "business-license.txt"}" />
+              <textarea class="text-area" name="ocr_source_text" placeholder="OCR용 텍스트를 붙여넣거나 사업자등록증 주요 내용을 입력하세요.">${customerState.uploadedFile?.metadata?.ocr_source_text || ""}</textarea>
+              <button class="secondary-button" type="submit">${customerState.uploadedFile ? "업로드 갱신" : "파일 메타데이터 저장"}</button>
+            </form>
+            <p class="table-subtext">${customerState.uploadedFile ? `저장됨: ${customerState.uploadedFile.originalName}` : "텍스트를 함께 저장하면 OCR 재시도 시 자동 추출에 사용됩니다."}</p>
+          </article>
+
+          <article class="customer-form-block">
+            <h4 class="section-mini-title">2. 고객 기본정보</h4>
+            <form id="customer-create-form" class="stack-form">
+              <select class="text-field" name="customer_type">
+                <option value="SHIP_OWNER">선사</option>
+                <option value="GENERAL">일반 고객</option>
+              </select>
+              <input class="text-field" name="customer_name" placeholder="업체명" required />
+              <input class="text-field" name="business_registration_no" placeholder="사업자번호" />
+              <input class="text-field" name="representative_name" placeholder="대표자명" />
+              <input class="text-field" name="company_phone" placeholder="회사 전화번호" />
+              <input class="text-field" name="company_email" placeholder="대표 이메일" />
+              <input class="text-field" name="business_category" placeholder="업태" />
+              <input class="text-field" name="business_item" placeholder="종목" />
+              <input class="text-field" name="opening_date" type="date" />
+              <textarea class="text-area" name="notes" placeholder="고객 메모"></textarea>
+              <button class="primary-button" type="submit">신규 업체 등록</button>
+            </form>
+          </article>
+
+          <article class="customer-form-block">
+            <h4 class="section-mini-title">3. 담당자 / 주소록</h4>
+            <form id="customer-contact-form" class="stack-form">
+              <input class="text-field" name="contact_name" placeholder="이름" ${selected ? "" : "disabled"} />
+              <select class="text-field" name="contact_role" ${selected ? "" : "disabled"}>
+                <option value="OWNER">대표</option>
+                <option value="STAFF">실무자</option>
+                <option value="MANAGER">관리자</option>
+                <option value="ACCOUNTING">회계</option>
+              </select>
+              <input class="text-field" name="department_name" placeholder="부서" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="job_title" placeholder="직책" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="mobile_phone" placeholder="휴대폰" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="office_phone" placeholder="회사 전화" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="email" placeholder="이메일" ${selected ? "" : "disabled"} />
+              <label class="checkbox-row compact-checkbox">
+                <input name="is_primary" type="checkbox" ${selected ? "" : "disabled"} />
+                <span>기본 담당자로 지정</span>
+              </label>
+              <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>담당자 추가</button>
+            </form>
+          </article>
+
+          <article class="customer-form-block">
+            <h4 class="section-mini-title">4. 주소 등록</h4>
+            <form id="customer-address-form" class="stack-form">
+              <select class="text-field" name="address_type" ${selected ? "" : "disabled"}>
+                <option value="BUSINESS">사업장</option>
+                <option value="BILLING">청구지</option>
+                <option value="SITE">현장 주소</option>
+                <option value="VESSEL_MANAGEMENT">선박 관리지</option>
+              </select>
+              <input class="text-field" name="postal_code" placeholder="우편번호" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="address_line_1" placeholder="기본 주소" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="address_line_2" placeholder="상세 주소" ${selected ? "" : "disabled"} />
+              <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>주소 추가</button>
+            </form>
+          </article>
+
+          <article class="customer-form-block">
+            <h4 class="section-mini-title">5. 자산 등록</h4>
+            <form id="customer-asset-form" class="stack-form">
+              <select class="text-field" name="asset_type" ${selected ? "" : "disabled"}>
+                <option value="VESSEL">선박</option>
+                <option value="SITE_EQUIPMENT">일반 운용 장비</option>
+              </select>
+              <input class="text-field" name="asset_name" placeholder="자산명" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="asset_code" placeholder="자산 코드" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="registration_no" placeholder="선박/설비 등록번호" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="imo_no" placeholder="IMO 번호 (선박일 때)" ${selected ? "" : "disabled"} />
+              <input class="text-field" name="location_description" placeholder="운용 위치" ${selected ? "" : "disabled"} />
+              <textarea class="text-area" name="notes" placeholder="자산 메모" ${selected ? "" : "disabled"}></textarea>
+              <button class="secondary-button" type="submit" ${selected ? "" : "disabled"}>자산 추가</button>
+            </form>
+          </article>
+
+          <article class="customer-form-block">
+            <h4 class="section-mini-title">6. 탑재 장비 등록</h4>
+            <form id="customer-equipment-form" class="stack-form">
+              <select class="text-field" name="asset_id" ${selected?.assets?.length ? "" : "disabled"}>
+                <option value="">자산 선택</option>
+                ${(selected?.assets || []).map((asset) => `<option value="${asset.id}">${asset.assetName}</option>`).join("")}
+              </select>
+              <select class="text-field" name="equipment_type" ${selected?.assets?.length ? "" : "disabled"}>
+                <option value="ENGINE">엔진</option>
+                <option value="GEARBOX">감속기</option>
+                <option value="OTHER">기타</option>
+              </select>
+              <input class="text-field" name="equipment_name" placeholder="장비명" ${selected?.assets?.length ? "" : "disabled"} />
+              <input class="text-field" name="serial_no" placeholder="시리얼 번호" ${selected?.assets?.length ? "" : "disabled"} />
+              <input class="text-field" name="installation_position" placeholder="설치 위치" ${selected?.assets?.length ? "" : "disabled"} />
+              <select class="text-field" name="engine_model_id" ${selected?.assets?.length ? "" : "disabled"}>
+                <option value="">엔진 모델 선택</option>
+                ${customerState.engineModels.map((model) => `<option value="${model.id}">${model.manufacturer} ${model.modelName}</option>`).join("")}
+              </select>
+              <select class="text-field" name="gearbox_model_id" ${selected?.assets?.length ? "" : "disabled"}>
+                <option value="">감속기 모델 선택</option>
+                ${customerState.gearboxModels.map((model) => `<option value="${model.id}">${model.manufacturer} ${model.modelName}</option>`).join("")}
+              </select>
+              <input class="text-field" name="manufacturer" placeholder="제조사" ${selected?.assets?.length ? "" : "disabled"} />
+              <input class="text-field" name="model_name" placeholder="현장 표기 모델명" ${selected?.assets?.length ? "" : "disabled"} />
+              <textarea class="text-area" name="notes" placeholder="장비 메모" ${selected?.assets?.length ? "" : "disabled"}></textarea>
+              <button class="secondary-button" type="submit" ${selected?.assets?.length ? "" : "disabled"}>장비 추가</button>
+            </form>
+          </article>
+
+          <article class="customer-form-block">
+            <h4 class="section-mini-title">7. 엔진 / 감속기 마스터 추가</h4>
+            <div class="master-form-grid">
+              <form id="engine-model-form" class="stack-form">
+                <p class="table-subtext">엔진 모델</p>
+                <input class="text-field" name="manufacturer" placeholder="제조사" />
+                <input class="text-field" name="model_name" placeholder="모델명" />
+                <input class="text-field" name="engine_type" placeholder="형식" />
+                <input class="text-field" name="fuel_type" placeholder="연료" />
+                <input class="text-field" name="power_rating" placeholder="출력" />
+                <button class="secondary-button" type="submit">엔진 모델 추가</button>
+              </form>
+              <form id="gearbox-model-form" class="stack-form">
+                <p class="table-subtext">감속기 모델</p>
+                <input class="text-field" name="manufacturer" placeholder="제조사" />
+                <input class="text-field" name="model_name" placeholder="모델명" />
+                <input class="text-field" name="gear_type" placeholder="형식" />
+                <input class="text-field" name="gear_ratio" placeholder="감속비" />
+                <input class="text-field" name="torque_rating" placeholder="토크" />
+                <button class="secondary-button" type="submit">감속기 모델 추가</button>
+              </form>
+            </div>
+          </article>
+        </div>
       </aside>
     </section>
   `;
