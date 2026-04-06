@@ -814,7 +814,7 @@ async function loadAppVersion() {
     dashboardState.appInfo = result;
     const label = `버전 ${result.version}`;
     loginAppVersion.textContent = label;
-    loginServerUrl.textContent = `서버 주소 ${result.serverUrl}`;
+    loginServerUrl.textContent = `서버 주소 ${result.serverUrl}${result.serverKind === "local" ? " (로컬 자동 선택)" : ""}`;
     loginAccessMode.textContent = `Cloudflare Access ${result.cloudflareAccessEnabled ? "활성" : "비활성"}`;
     setBadgeText(dashboardAppVersion, result.version, "neutral");
   } catch {

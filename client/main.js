@@ -9,6 +9,9 @@ let splashWindow = null;
 let sessionCookie = "";
 let pendingSessionId = "";
 let runtimeAccessScope = "EXTERNAL";
+let resolvedServerUrl = "";
+let resolvedServerKind = "configured";
+let serverResolutionInFlight = null;
 let startupUpdateMode = false;
 let splashOpenedAt = 0;
 let updateCheckInFlight = false;
@@ -97,6 +100,50 @@ function normalizeBaseUrl(serverUrl) {
   return String(serverUrl || "").replace(/\/+$/, "");
 }
 
+function getConfiguredServerUrl() {
+  return normalizeBaseUrl(clientConstants.serverUrl);
+}
+
+function getLocalServerUrl() {
+  return normalizeBaseUrl(clientConstants.localServerUrl || "http://127.0.0.1:3000");
+}
+
+function isLocalServerUrl(baseUrl) {
+  return baseUrl === getLocalServerUrl();
+}
+
+function getScopePreference(scopeOverride) {
+  const preferences = readPreferences();
+  if (scopeOverride && scopeOverride !== "AUTO") {
+    return scopeOverride;
+  }
+
+  if (preferences.testAccessScope && preferences.testAccessScope !== "AUTO") {
+    return preferences.testAccessScope;
+  }
+
+  if (clientConstants.forceAccessScopeForTesting && clientConstants.forceAccessScopeForTesting !== "AUTO") {
+    return clientConstants.forceAccessScopeForTesting;
+  }
+
+  return "AUTO";
+}
+
+function buildCandidateServerUrls(scopePreference = "AUTO") {
+  const configured = getConfiguredServerUrl();
+  const local = getLocalServerUrl();
+
+  if (scopePreference === "EXTERNAL") {
+    return [configured].filter(Boolean);
+  }
+
+  if (scopePreference === "INTERNAL") {
+    return Array.from(new Set([local, configured].filter(Boolean)));
+  }
+
+  return Array.from(new Set([local, configured].filter(Boolean)));
+}
+
 function parseSetCookie(headerValue) {
   if (!headerValue) {
     return "";
@@ -132,30 +179,9 @@ function sanitizeErrorSnippet(value) {
     .slice(0, 220);
 }
 
-function persistCurrentSessionIfAllowed(scopeOverride) {
-  const preferences = readPreferences();
-  const resolvedScope = scopeOverride || preferences.accessScope || runtimeAccessScope;
-
-  if (!preferences.autoLoginEnabled) {
-    clearPersistedSession();
-    return;
-  }
-
-  if (resolvedScope === "INTERNAL" && sessionCookie) {
-    writePersistedSession(sessionCookie);
-    return;
-  }
-}
-
-async function apiRequest(method, routePath, body, options = {}) {
-  const baseUrl = normalizeBaseUrl(clientConstants.serverUrl);
+function buildRequestHeaders(routePath, options = {}, baseUrl = getConfiguredServerUrl()) {
   const preferences = readPreferences();
   const cloudflareAccess = getCloudflareAccessConfig();
-
-  if (!baseUrl) {
-    throw new Error("서버 URL이 설정되지 않았습니다.");
-  }
-
   const headers = {
     "Content-Type": "application/json",
   };
@@ -164,7 +190,7 @@ async function apiRequest(method, routePath, body, options = {}) {
     headers.Cookie = sessionCookie;
   }
 
-  if (cloudflareAccess.enabled) {
+  if (!isLocalServerUrl(baseUrl) && cloudflareAccess.enabled) {
     headers["CF-Access-Client-Id"] = cloudflareAccess.clientId;
     headers["CF-Access-Client-Secret"] = cloudflareAccess.clientSecret;
   }
@@ -187,6 +213,86 @@ async function apiRequest(method, routePath, body, options = {}) {
   if (forcedScope) {
     headers["x-demo-force-access-scope"] = forcedScope;
   }
+
+  return headers;
+}
+
+async function probeServerUrl(baseUrl, options = {}) {
+  if (!baseUrl) {
+    return false;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 1200);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/auth/access-scope`, {
+      method: "GET",
+      headers: buildRequestHeaders("/api/v1/auth/access-scope", options, baseUrl),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    return response.ok;
+  } catch {
+    clearTimeout(timeout);
+    return false;
+  }
+}
+
+async function resolveServerUrl(options = {}) {
+  if (serverResolutionInFlight) {
+    return serverResolutionInFlight;
+  }
+
+  const scopePreference = getScopePreference(options.testAccessScope);
+  const candidates = buildCandidateServerUrls(scopePreference);
+
+  serverResolutionInFlight = (async () => {
+    for (const candidate of candidates) {
+      if (await probeServerUrl(candidate, options)) {
+        resolvedServerUrl = candidate;
+        resolvedServerKind = isLocalServerUrl(candidate) ? "local" : "configured";
+        return candidate;
+      }
+    }
+
+    const fallback = getConfiguredServerUrl() || getLocalServerUrl();
+    resolvedServerUrl = fallback;
+    resolvedServerKind = isLocalServerUrl(fallback) ? "local" : "configured";
+    return fallback;
+  })();
+
+  try {
+    return await serverResolutionInFlight;
+  } finally {
+    serverResolutionInFlight = null;
+  }
+}
+
+function persistCurrentSessionIfAllowed(scopeOverride) {
+  const preferences = readPreferences();
+  const resolvedScope = scopeOverride || preferences.accessScope || runtimeAccessScope;
+
+  if (!preferences.autoLoginEnabled) {
+    clearPersistedSession();
+    return;
+  }
+
+  if (resolvedScope === "INTERNAL" && sessionCookie) {
+    writePersistedSession(sessionCookie);
+    return;
+  }
+}
+
+async function apiRequest(method, routePath, body, options = {}) {
+  const baseUrl = await resolveServerUrl({ testAccessScope: options.testAccessScope });
+
+  if (!baseUrl) {
+    throw new Error("서버 URL이 설정되지 않았습니다.");
+  }
+
+  const headers = buildRequestHeaders(routePath, options, baseUrl);
 
   let response;
   try {
@@ -493,11 +599,15 @@ async function runStartupUpdateFlow() {
 }
 
 ipcMain.handle("preference:get", () => readPreferences());
-ipcMain.handle("app:version", () => ({
-  version: app.getVersion(),
-  cloudflareAccessEnabled: getCloudflareAccessConfig().enabled,
-  serverUrl: clientConstants.serverUrl,
-}));
+ipcMain.handle("app:version", async () => {
+  const serverUrl = await resolveServerUrl();
+  return {
+    version: app.getVersion(),
+    cloudflareAccessEnabled: getCloudflareAccessConfig().enabled,
+    serverUrl,
+    serverKind: resolvedServerKind,
+  };
+});
 ipcMain.handle("preference:save", (_event, payload) => {
   const nextPreferences = writePreferences(payload);
   persistCurrentSessionIfAllowed(nextPreferences.accessScope);
