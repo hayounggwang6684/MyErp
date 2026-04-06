@@ -334,9 +334,9 @@ button, input { font: inherit; }
 
 .dashboard-shell {
   height: 100vh;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 16px;
   overflow: hidden;
   padding: 24px 28px 20px;
 }
@@ -352,7 +352,8 @@ button, input { font: inherit; }
   display: flex;
   gap: 10px;
   flex-wrap: nowrap;
-  margin-top: 18px;
+  min-height: 46px;
+  align-items: center;
   overflow-x: auto;
   padding-bottom: 2px;
 }
@@ -379,7 +380,7 @@ button, input { font: inherit; }
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-top: 18px;
+  min-height: 84px;
   flex: 0 0 auto;
 }
 
@@ -411,7 +412,7 @@ button, input { font: inherit; }
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
-  margin-top: 20px;
+  margin-top: 0;
 }
 
 .metric-card {
@@ -436,13 +437,20 @@ button, input { font: inherit; }
 }
 
 .dashboard-table-panel {
-  margin-top: 16px;
+  margin-top: 14px;
+  overflow: hidden;
 }
 
 #dashboard-main-pane {
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+#dashboard-main-pane > :not(.hidden) {
+  min-height: 0;
 }
 
 .data-table {
@@ -509,9 +517,9 @@ button, input { font: inherit; }
 }
 
 .customer-workspace {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
+  margin-top: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
   height: 100%;
   min-height: 0;
@@ -528,7 +536,7 @@ button, input { font: inherit; }
   display: grid;
   grid-template-columns: 300px minmax(0, 1.2fr) 420px;
   gap: 14px;
-  flex: 1 1 auto;
+  align-items: stretch;
   min-height: 0;
   overflow: hidden;
 }
@@ -543,7 +551,7 @@ button, input { font: inherit; }
 
 .customer-list-panel,
 .customer-form-panel {
-  align-self: start;
+  align-self: stretch;
 }
 
 .customer-list {
@@ -555,6 +563,7 @@ button, input { font: inherit; }
   padding: 18px 20px 16px;
   border-radius: 20px;
   box-shadow: var(--shadow-md);
+  overflow: hidden;
 }
 
 .customer-toolbar-main {
@@ -839,6 +848,11 @@ button, input { font: inherit; }
   padding-right: 4px;
 }
 
+.customer-record-sheet,
+.customer-memo-panel {
+  min-height: 0;
+}
+
 .customer-inline-item,
 .customer-asset-head {
   display: flex;
@@ -1034,6 +1048,7 @@ button, input { font: inherit; }
 
   .dashboard-section-header {
     display: grid;
+    min-height: auto;
   }
 
   .detail-grid {
