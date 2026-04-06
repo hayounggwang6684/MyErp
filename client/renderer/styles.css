@@ -336,9 +336,9 @@ button, input { font: inherit; }
   height: 100vh;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: 16px;
+  gap: 12px;
   overflow: hidden;
-  padding: 24px 28px 20px;
+  padding: 18px 28px 18px;
 }
 
 .top-bar, .stack-item {
@@ -346,6 +346,16 @@ button, input { font: inherit; }
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+}
+
+.top-bar {
+  min-height: 56px;
+}
+
+.top-bar-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .dashboard-tabs {
@@ -380,7 +390,7 @@ button, input { font: inherit; }
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  min-height: 84px;
+  min-height: 72px;
   flex: 0 0 auto;
 }
 

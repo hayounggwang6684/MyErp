@@ -1047,14 +1047,6 @@ async function handleExtractBusinessLicense(customerId) {
   await loadCustomerDetail(customerId, customerState.notice);
 }
 
-document.getElementById("check-updates").addEventListener("click", async () => {
-  const result = await window.erpClient.checkForUpdates();
-  const kind = result.status === "CHECK_FAILED" ? "warn" : "info";
-  setMessage(updateStatus, kind, result.message);
-  latestManualDownloadUrl = result.downloadUrl || "";
-  openUpdateDownloadButton.classList.toggle("hidden", !latestManualDownloadUrl);
-});
-
 window.erpClient.onUpdateStatus((payload) => {
   const kind = payload.status === "CHECK_FAILED" ? "warn" : "info";
   setMessage(updateStatus, kind, payload.message);
@@ -1154,10 +1146,6 @@ document.getElementById("restart-enrollment").addEventListener("click", async ()
   showScreen("login");
 });
 
-document.getElementById("refresh-session").addEventListener("click", async () => {
-  await refreshSession();
-});
-
 document.getElementById("logout").addEventListener("click", async () => {
   await window.erpClient.logout();
   dashboardState.activeTab = "orders";
@@ -1177,6 +1165,26 @@ document.getElementById("logout").addEventListener("click", async () => {
   await loadPreferences();
   setMessage(loginFeedback, "info", "로그아웃되었습니다.");
   showScreen("login");
+});
+
+window.addEventListener("keydown", async (event) => {
+  if (event.key !== "F5") {
+    return;
+  }
+
+  event.preventDefault();
+
+  if (screens.dashboard.classList.contains("active")) {
+    await refreshSession();
+    setMessage(updateStatus, "info", "F5로 현재 세션과 화면을 새로고침했습니다.");
+    return;
+  }
+
+  if (screens.login.classList.contains("active")) {
+    await loadAppVersion();
+    await loadPreferences();
+    setMessage(loginFeedback, "info", "F5로 로그인 화면 정보를 새로고침했습니다.");
+  }
 });
 
 dashboardTabs.addEventListener("click", (event) => {
