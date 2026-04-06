@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("erpClient", {
   getPreference: () => ipcRenderer.invoke("preference:get"),
   savePreference: (payload) => ipcRenderer.invoke("preference:save", payload),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  openUpdateDownload: (url) => ipcRenderer.invoke("updates:open-download", url),
   onUpdateStatus: (handler) => {
     ipcRenderer.removeAllListeners("update-status");
     ipcRenderer.on("update-status", (_event, payload) => handler(payload));

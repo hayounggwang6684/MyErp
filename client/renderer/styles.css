@@ -516,6 +516,12 @@ button, input { font: inherit; }
   margin-top: 12px;
 }
 
+.settings-actions-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
 .customer-workspace {
   margin-top: 0;
   display: grid;

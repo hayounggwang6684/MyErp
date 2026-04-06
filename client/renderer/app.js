@@ -98,6 +98,7 @@ const loginAppVersion = document.getElementById("login-app-version");
 const loginServerUrl = document.getElementById("login-server-url");
 const loginAccessMode = document.getElementById("login-access-mode");
 const dashboardAppVersion = document.getElementById("dashboard-app-version");
+const settingsUpdateMode = document.getElementById("settings-update-mode");
 const enrollmentQr = document.getElementById("enrollment-qr");
 const enrollmentSecret = document.getElementById("enrollment-secret");
 const scopeToggleButtons = Array.from(document.querySelectorAll(".login-scope-button"));
@@ -115,6 +116,7 @@ const settingsAutoLogin = document.getElementById("settings-auto-login");
 const settingsShowUsername = document.getElementById("settings-show-username");
 const settingsRememberedUsername = document.getElementById("settings-remembered-username");
 const settingsCloudflareAccess = document.getElementById("settings-cloudflare-access");
+const openUpdateDownloadButton = document.getElementById("open-update-download");
 const settingsScopeButtons = Array.from(document.querySelectorAll(".settings-scope-button"));
 const settingsFeedback = document.getElementById("settings-feedback");
 
@@ -125,6 +127,7 @@ let dashboardState = {
   preferences: null,
   appInfo: null,
 };
+let latestManualDownloadUrl = "";
 
 let customerState = {
   loaded: false,
@@ -264,6 +267,11 @@ function renderSettingsTab() {
     settingsCloudflareAccess,
     dashboardState.appInfo?.cloudflareAccessEnabled ? "활성" : "비활성",
     dashboardState.appInfo?.cloudflareAccessEnabled ? "ok" : "neutral",
+  );
+  setBadgeText(
+    settingsUpdateMode,
+    dashboardState.appInfo?.platform === "darwin" ? "수동 다운로드 설치" : "자동 다운로드 후 재시작",
+    "neutral",
   );
   renderSettingsScopeToggle(preferences.testAccessScope || "AUTO");
 }
@@ -817,6 +825,9 @@ async function loadAppVersion() {
     loginServerUrl.textContent = `서버 주소 ${result.serverUrl}${result.serverKind === "local" ? " (로컬 자동 선택)" : ""}`;
     loginAccessMode.textContent = `Cloudflare Access ${result.cloudflareAccessEnabled ? "활성" : "비활성"}`;
     setBadgeText(dashboardAppVersion, result.version, "neutral");
+    if (result.platform === "darwin") {
+      setMessage(updateStatus, "info", "macOS는 앱 내 자동 설치를 사용하지 않습니다. 새 버전이 있으면 다운로드 페이지에서 수동 설치합니다.");
+    }
   } catch {
     dashboardState.appInfo = null;
     loginAppVersion.textContent = "버전 확인 실패";
@@ -1040,11 +1051,23 @@ document.getElementById("check-updates").addEventListener("click", async () => {
   const result = await window.erpClient.checkForUpdates();
   const kind = result.status === "CHECK_FAILED" ? "warn" : "info";
   setMessage(updateStatus, kind, result.message);
+  latestManualDownloadUrl = result.downloadUrl || "";
+  openUpdateDownloadButton.classList.toggle("hidden", !latestManualDownloadUrl);
 });
 
 window.erpClient.onUpdateStatus((payload) => {
   const kind = payload.status === "CHECK_FAILED" ? "warn" : "info";
   setMessage(updateStatus, kind, payload.message);
+  latestManualDownloadUrl = payload.downloadUrl || "";
+  openUpdateDownloadButton.classList.toggle("hidden", !latestManualDownloadUrl);
+});
+
+openUpdateDownloadButton.addEventListener("click", async () => {
+  if (!latestManualDownloadUrl) {
+    return;
+  }
+
+  await window.erpClient.openUpdateDownload(latestManualDownloadUrl);
 });
 
 loginForm.addEventListener("submit", async (event) => {

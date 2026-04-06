@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { autoUpdater } = require("electron-updater");
@@ -177,6 +177,54 @@ function sanitizeErrorSnippet(value) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 220);
+}
+
+function normalizeVersionTag(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^v/i, "");
+}
+
+function compareVersions(left, right) {
+  const leftParts = normalizeVersionTag(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeVersionTag(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = leftParts[index] || 0;
+    const rightValue = rightParts[index] || 0;
+    if (leftValue > rightValue) {
+      return 1;
+    }
+    if (leftValue < rightValue) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+async function fetchLatestReleaseInfo() {
+  const owner = clientConstants.updateRepoOwner;
+  const repo = clientConstants.updateRepoName;
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "Sunjin-ERP",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`릴리즈 조회 실패 (HTTP ${response.status})`);
+  }
+
+  return response.json();
+}
+
+function findMacAssetDownloadUrl(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const preferredAsset = assets.find((asset) => /\.dmg$/i.test(asset.name || ""));
+  return preferredAsset?.browser_download_url || release?.html_url || "";
 }
 
 function buildRequestHeaders(routePath, options = {}, baseUrl = getConfiguredServerUrl()) {
@@ -409,6 +457,10 @@ function scheduleStartupRetry(error) {
 }
 
 function registerAutoUpdater() {
+  if (process.platform === "darwin") {
+    return;
+  }
+
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
@@ -498,6 +550,50 @@ async function checkForUpdates(_options = {}) {
     };
     sendUpdateStatus(status);
     return status;
+  }
+
+  if (process.platform === "darwin") {
+    sendUpdateStatus({
+      status: "CHECKING",
+      message: "최신 릴리즈를 확인하는 중입니다.",
+    });
+
+    try {
+      const release = await fetchLatestReleaseInfo();
+      const latestVersion = normalizeVersionTag(release.tag_name);
+      const currentVersion = normalizeVersionTag(app.getVersion());
+      const downloadUrl = findMacAssetDownloadUrl(release);
+
+      if (compareVersions(latestVersion, currentVersion) > 0) {
+        const status = {
+          status: "MANUAL_UPDATE_AVAILABLE",
+          message: `macOS 새 버전 ${latestVersion}이 있습니다. 자동 설치 대신 다운로드 후 수동 교체가 필요합니다.`,
+          latestVersion,
+          downloadUrl,
+        };
+        sendUpdateStatus(status);
+        return status;
+      }
+
+      const status = {
+        status: "UP_TO_DATE",
+        message: `현재 버전(${currentVersion})이 최신입니다.`,
+        latestVersion,
+      };
+      sendUpdateStatus(status);
+      return status;
+    } catch (error) {
+      const status = {
+        status: "CHECK_FAILED",
+        message: `업데이트 확인에 실패했습니다: ${error?.message || "알 수 없는 오류"}`,
+      };
+      sendUpdateStatus(status);
+      return status;
+    } finally {
+      if (startupUpdateMode) {
+        finishStartupUpdateFlow();
+      }
+    }
   }
 
   if (updateCheckInFlight) {
@@ -603,6 +699,7 @@ ipcMain.handle("app:version", async () => {
   const serverUrl = await resolveServerUrl();
   return {
     version: app.getVersion(),
+    platform: process.platform,
     cloudflareAccessEnabled: getCloudflareAccessConfig().enabled,
     serverUrl,
     serverKind: resolvedServerKind,
@@ -724,6 +821,14 @@ ipcMain.handle("customers:extract-business-license", async (_event, customerId, 
   apiRequest("POST", `/api/v1/customers/${customerId}/business-license/extract`, payload),
 );
 ipcMain.handle("updates:check", async () => checkForUpdates());
+ipcMain.handle("updates:open-download", async (_event, url) => {
+  if (!url) {
+    return false;
+  }
+
+  await shell.openExternal(String(url));
+  return true;
+});
 
 app.whenReady().then(() => {
   sessionCookie = readPersistedSession();
