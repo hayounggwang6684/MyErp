@@ -55,6 +55,19 @@ Test PC (Windows 실행 테스트)
 
 개발자는 아래 순서를 반드시 따른다.
 
+### 일반 사용자 UI 작업 기준
+
+- 일반 사용자 UI는 Electron 클라이언트 전용으로 취급한다.
+- 일반 사용자 UI 수정 대상은 `client/renderer/index.html`, `client/renderer/app.js`, `client/renderer/styles.css` 이다.
+- 필요 시 `client/main.js`, `client/preload.js` 까지 확장할 수 있지만, 브라우저용 일반 로그인 화면을 기준으로 수정하지 않는다.
+- 브라우저 `/`, `/login`, `/dashboard`, `/mfa/verify` 는 현재 설치형 클라이언트 안내만 제공한다.
+- Mac mini에서 일반 사용자 UI를 확인할 때도 브라우저가 아니라 macOS Electron 클라이언트를 사용한다.
+- 관리자 로컬 웹 화면 `/admin/*` 은 예외적으로 웹 기반을 유지하며, 일반 사용자 UI와 혼동하지 않는다.
+- UI 리뷰 시 아래를 체크한다.
+  - 이 변경이 `client/renderer/*` 기준인가
+  - 관리자 로컬 웹과 일반 사용자 Electron UI를 혼동하지 않았는가
+  - 전체 창 스크롤이 아니라 내부 패널 스크롤 규칙을 유지하는가
+
 ### Step 1. 로컬 개발
 
 Mac 개발 PC에서 Codex를 사용하여 프로젝트를 수정한다.

@@ -89,6 +89,9 @@ scripts/
 - Cloudflare Access를 앞단에 붙일 경우 Electron 클라이언트는 `client/constants.js`의 `cloudflareAccess` 설정으로 `CF-Access-Client-Id` / `CF-Access-Client-Secret` 헤더를 보낼 수 있다.
 - GitHub Actions로 Windows 및 macOS 클라이언트를 릴리즈할 때 Cloudflare Access를 같이 포함하려면 저장소 시크릿 `CLOUDFLARE_ACCESS_CLIENT_ID`, `CLOUDFLARE_ACCESS_CLIENT_SECRET`를 설정해야 한다.
 - macOS 클라이언트는 `client:dist:mac`, `client:release:mac` 스크립트로 `dmg`와 `zip` 설치 자산을 생성한다.
+- 일반 사용자 브라우저 경로 `/`, `/login`, `/dashboard`, `/mfa/verify` 는 더 이상 업무 UI를 제공하지 않고 설치형 클라이언트 안내만 제공한다.
+- 일반 사용자 UI 수정은 `client/renderer/*` 기준으로만 진행하며, `src/web/views/*` 의 옛 로그인/대시보드/MFA 템플릿은 런타임에서 제거되었다.
+- Mac mini에서 일반 사용자 UI를 확인할 때도 브라우저가 아니라 macOS Electron 클라이언트를 사용한다.
 - Mac mini 로컬 관리자 인터페이스는 `운영 현황 / 사용자 관리 / 업데이트 관리 / 감사 로그` 4개 메뉴 구조를 기준으로 한다.
 - Mac mini 로컬 관리자 인터페이스의 `사용자 관리`는 `ERP 사용자 계정`과 `직원 기본정보`를 함께 관리하는 구조를 기준으로 한다.
 - 직원 전체가 ERP 사용자는 아니며, ERP 사용자 계정은 일부 직원에게만 연결된다.

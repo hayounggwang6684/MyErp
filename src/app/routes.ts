@@ -58,47 +58,44 @@ export function registerRoutes(app: Express) {
   });
 
   app.get("/login", async (request, response) => {
-    const session = await getSessionFromRequest(request);
-    if (session) {
-      response.redirect("/dashboard");
-      return;
-    }
-
-    renderPage(response, "login.html", {
-      PAGE_TITLE: "ERP Login",
-      STATUS_BADGE_CLASS: "ok",
-      STATUS_BADGE_TEXT: "접속 인증서 확인 완료",
+    const isLocalAdmin = isLocalRequest(request);
+    renderPage(response, "client-access.html", {
+      PAGE_TITLE: "ERP Client Access",
+      STATUS_BADGE_CLASS: "warn",
+      STATUS_BADGE_TEXT: "Electron 클라이언트 전용",
       FEEDBACK_CLASS: "info",
-      FEEDBACK_MESSAGE: "PostgreSQL과 TOTP MFA 기준 로그인 화면입니다.",
+      FEEDBACK_MESSAGE: "일반 사용자는 Windows 또는 macOS Electron 클라이언트로만 접속합니다.",
+      ADMIN_LINK: isLocalAdmin
+        ? '<a class="secondary-button" href="/admin/login">Mac mini 관리자 로그인</a>'
+        : "",
     });
   });
 
   app.get("/mfa/verify", async (request, response) => {
-    const pending = await sessionService.getPendingChallenge(getCookieValue(request.headers.cookie, authCookieName));
-
-    if (!pending) {
-      response.redirect("/login");
-      return;
-    }
-
-    renderPage(response, "mfa.html", {
-      PAGE_TITLE: "ERP MFA Verification",
-      FEEDBACK_CLASS: "info",
-      FEEDBACK_MESSAGE: "Authenticator 앱 코드를 입력해 주세요.",
+    const isLocalAdmin = isLocalRequest(request);
+    renderPage(response, "client-access.html", {
+      PAGE_TITLE: "ERP Client Access",
+      STATUS_BADGE_CLASS: "warn",
+      STATUS_BADGE_TEXT: "브라우저 업무 UI 폐기",
+      FEEDBACK_CLASS: "warn",
+      FEEDBACK_MESSAGE: "MFA와 대시보드는 Electron 최신 UI에서만 제공합니다.",
+      ADMIN_LINK: isLocalAdmin
+        ? '<a class="secondary-button" href="/admin/login">Mac mini 관리자 로그인</a>'
+        : "",
     });
   });
 
   app.get("/dashboard", async (request, response) => {
-    const session = await getSessionFromRequest(request);
-    if (!session) {
-      response.redirect("/login");
-      return;
-    }
-
-    renderPage(response, "dashboard.html", {
-      PAGE_TITLE: "ERP Dashboard",
-      USER_NAME: session.user.name,
-      USER_ROLE: session.user.roles.join(", "),
+    const isLocalAdmin = isLocalRequest(request);
+    renderPage(response, "client-access.html", {
+      PAGE_TITLE: "ERP Client Access",
+      STATUS_BADGE_CLASS: "warn",
+      STATUS_BADGE_TEXT: "브라우저 업무 UI 폐기",
+      FEEDBACK_CLASS: "warn",
+      FEEDBACK_MESSAGE: "대시보드는 Windows 및 macOS Electron 클라이언트에서만 사용합니다.",
+      ADMIN_LINK: isLocalAdmin
+        ? '<a class="secondary-button" href="/admin/login">Mac mini 관리자 로그인</a>'
+        : "",
     });
   });
 

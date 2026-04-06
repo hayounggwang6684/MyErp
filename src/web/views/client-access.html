@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{PAGE_TITLE}}</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="brand-panel">
+        <p class="brand-top">SHERWOOD</p>
+        <h1 class="brand-title">(주)선진종합</h1>
+        <p class="brand-subtitle">
+          일반 사용자 업무 UI는 더 이상 브라우저에서 제공하지 않습니다. Windows와 macOS용 Electron 클라이언트를 설치해
+          접속해 주세요.
+        </p>
+        <div class="brand-tags">
+          <span>Windows Client</span>
+          <span>macOS Client</span>
+          <span>Cloudflare Access</span>
+        </div>
+      </section>
+      <section class="auth-side">
+        <article class="auth-card">
+          <div class="topline">
+            <span class="status-badge {{STATUS_BADGE_CLASS}}">{{STATUS_BADGE_TEXT}}</span>
+          </div>
+          <h2 class="card-title">클라이언트 전용 접속</h2>
+          <p class="card-copy">최신 일반 사용자 UI는 Electron 클라이언트에서만 유지보수합니다.</p>
+
+          <div class="message {{FEEDBACK_CLASS}}">{{FEEDBACK_MESSAGE}}</div>
+
+          <div class="button-row">
+            <a class="primary-button" href="https://github.com/hayounggwang6684/MyErp/releases/latest">최신 클라이언트 받기</a>
+            {{ADMIN_LINK}}
+          </div>
+
+          <div class="helper-links">
+            <span>Windows / macOS 공용 renderer 사용</span>
+            <span>Mac mini 관리자 화면은 로컬 전용</span>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
