@@ -92,7 +92,6 @@ const loginFeedback = document.getElementById("login-feedback");
 const mfaFeedback = document.getElementById("mfa-feedback");
 const enrollmentFeedback = document.getElementById("mfa-enrollment-feedback");
 const updateStatus = document.getElementById("update-status");
-const sessionUser = document.getElementById("session-user");
 const autoLoginCheckbox = document.getElementById("auto-login");
 const loginAppVersion = document.getElementById("login-app-version");
 const loginServerUrl = document.getElementById("login-server-url");
@@ -859,7 +858,6 @@ async function refreshSession() {
   try {
     const session = await window.erpClient.getSession();
     dashboardState.session = session;
-    sessionUser.textContent = `${session.data.user.name} · ${session.data.user.department} · ${session.data.roles.join(", ")}`;
     renderDashboardTabs();
     renderActiveTab();
     showScreen("dashboard");
@@ -1143,27 +1141,6 @@ for (const button of scopeToggleButtons) {
 
 document.getElementById("restart-enrollment").addEventListener("click", async () => {
   await window.erpClient.logout();
-  showScreen("login");
-});
-
-document.getElementById("logout").addEventListener("click", async () => {
-  await window.erpClient.logout();
-  dashboardState.activeTab = "orders";
-  customerState = {
-    loaded: false,
-    loading: false,
-    submitting: false,
-    search: "",
-    list: [],
-    selectedCustomerId: null,
-    selectedCustomer: null,
-    engineModels: [],
-    gearboxModels: [],
-    uploadedFile: null,
-    notice: "고객, 담당자, 선박/장비, 엔진/감속기 마스터를 한 화면에서 관리합니다.",
-  };
-  await loadPreferences();
-  setMessage(loginFeedback, "info", "로그아웃되었습니다.");
   showScreen("login");
 });
 
