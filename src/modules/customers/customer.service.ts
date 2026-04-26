@@ -8,6 +8,7 @@ import type {
   CustomerContact,
   CustomerDetail,
   CustomerEquipment,
+  EquipmentMasterOption,
   CustomerSummary,
   EngineModel,
   FileRecord,
@@ -27,6 +28,10 @@ function booleanValue(value: unknown) {
   return value === true || value === "true" || value === "on" || value === 1 || value === "1";
 }
 
+function hasInput(input: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(input, key);
+}
+
 function mapCustomerSummary(row: {
   id: string;
   customer_no: string;
@@ -37,6 +42,9 @@ function mapCustomerSummary(row: {
   representative_name: string | null;
   company_phone: string;
   company_email: string;
+  tax_category: string;
+  bank_account: string;
+  invoice_email: string;
   primary_contact_name: string | null;
   primary_contact_phone: string | null;
   asset_count: number;
@@ -53,6 +61,9 @@ function mapCustomerSummary(row: {
     representativeName: row.representative_name,
     companyPhone: row.company_phone,
     companyEmail: row.company_email,
+    taxCategory: row.tax_category,
+    bankAccount: row.bank_account,
+    invoiceEmail: row.invoice_email,
     primaryContactName: row.primary_contact_name,
     primaryContactPhone: row.primary_contact_phone,
     assetCount: row.asset_count,
@@ -119,6 +130,7 @@ function mapAsset(row: {
   customer_id: string;
   asset_name: string;
   asset_type: "VESSEL" | "SITE_EQUIPMENT";
+  vessel_type: string;
   asset_code: string;
   status: string;
   registration_no: string;
@@ -132,6 +144,7 @@ function mapAsset(row: {
     customerId: row.customer_id,
     assetName: row.asset_name,
     assetType: row.asset_type,
+    vesselType: row.vessel_type,
     assetCode: row.asset_code,
     status: row.status,
     registrationNo: row.registration_no,
@@ -218,6 +231,18 @@ function mapGearboxModel(row: {
     notes: row.notes,
     updatedAt: row.updated_at.toISOString(),
   } satisfies GearboxModel;
+}
+
+function mapEquipmentMasterOption(row: {
+  id: string;
+  option_type: string;
+  option_value: string;
+}) {
+  return {
+    id: row.id,
+    optionType: row.option_type,
+    optionValue: row.option_value,
+  } satisfies EquipmentMasterOption;
 }
 
 function mapFile(row: {
@@ -312,7 +337,7 @@ export class CustomerService {
     const executor: DbExecutor = client ?? { query };
     const normalizedSearch = text(search);
     const searchValue = normalizedSearch ? `%${normalizedSearch}%` : null;
-    const result = await executor.query<{
+    type CustomerListRow = {
       id: string;
       customer_no: string;
       customer_name: string;
@@ -322,80 +347,150 @@ export class CustomerService {
       representative_name: string | null;
       company_phone: string;
       company_email: string;
+      tax_category: string;
+      bank_account: string;
+      invoice_email: string;
       primary_contact_name: string | null;
       primary_contact_phone: string | null;
       asset_count: number;
       equipment_count: number;
       updated_at: Date;
-    }>(
+    };
+
+    if (!searchValue) {
+      const result = await executor.query<CustomerListRow>(
+        `select
+           c.id,
+           c.customer_no,
+           c.customer_name,
+           c.customer_type,
+           c.status,
+           c.business_registration_no,
+           c.representative_name,
+           c.company_phone,
+           c.company_email,
+           c.tax_category,
+           c.bank_account,
+           c.invoice_email,
+           pc.contact_name as primary_contact_name,
+           nullif(coalesce(pc.mobile_phone, pc.office_phone), '') as primary_contact_phone,
+           coalesce(ac.asset_count, 0)::int as asset_count,
+           coalesce(ec.equipment_count, 0)::int as equipment_count,
+           c.updated_at
+         from master.customers c
+         left join (
+           select distinct on (customer_id)
+             customer_id,
+             contact_name,
+             mobile_phone,
+             office_phone
+           from master.customer_contacts
+           order by customer_id, is_primary desc, updated_at desc
+         ) pc on pc.customer_id = c.id
+         left join (
+           select customer_id, count(*)::int as asset_count
+           from master.customer_assets
+           group by customer_id
+         ) ac on ac.customer_id = c.id
+         left join (
+           select customer_id, count(*)::int as equipment_count
+           from master.customer_equipments
+           group by customer_id
+         ) ec on ec.customer_id = c.id
+         order by c.updated_at desc, c.customer_name asc`,
+      );
+
+      return result.rows.map(mapCustomerSummary);
+    }
+
+    const result = await executor.query<CustomerListRow>(
       `select
-         c.id,
-         c.customer_no,
-         c.customer_name,
-         c.customer_type,
-         c.status,
-         c.business_registration_no,
-         c.representative_name,
-         c.company_phone,
-         c.company_email,
-         (
-           select cc.contact_name
-           from master.customer_contacts cc
-           where cc.customer_id = c.id
-           order by cc.is_primary desc, cc.updated_at desc
-           limit 1
-         ) as primary_contact_name,
-         (
-           select nullif(coalesce(cc.mobile_phone, cc.office_phone), '')
-           from master.customer_contacts cc
-           where cc.customer_id = c.id
-           order by cc.is_primary desc, cc.updated_at desc
-           limit 1
-         ) as primary_contact_phone,
-         (
-           select count(*)::int
-           from master.customer_assets a
-           where a.customer_id = c.id
-         ) as asset_count,
-         (
-           select count(*)::int
-           from master.customer_equipments e
-           where e.customer_id = c.id
-         ) as equipment_count,
-         c.updated_at
-       from master.customers c
-       where (
-         $1::text is null
-         or c.customer_name ilike $1
-         or coalesce(c.business_registration_no, '') ilike $1
-         or exists (
-           select 1
-           from master.customer_contacts cc
-           where cc.customer_id = c.id
-             and (
-               cc.contact_name ilike $1
-               or cc.mobile_phone ilike $1
-               or cc.office_phone ilike $1
-             )
+         matched.id,
+         matched.customer_no,
+         matched.customer_name,
+         matched.customer_type,
+         matched.status,
+         matched.business_registration_no,
+         matched.representative_name,
+         matched.company_phone,
+         matched.company_email,
+         matched.tax_category,
+         matched.bank_account,
+         matched.invoice_email,
+         pc.contact_name as primary_contact_name,
+         nullif(coalesce(pc.mobile_phone, pc.office_phone), '') as primary_contact_phone,
+         coalesce(ac.asset_count, 0)::int as asset_count,
+         coalesce(ec.equipment_count, 0)::int as equipment_count,
+         matched.updated_at
+       from (
+         select
+           c.id,
+           c.customer_no,
+           c.customer_name,
+           c.customer_type,
+           c.status,
+           c.business_registration_no,
+           c.representative_name,
+           c.company_phone,
+           c.company_email,
+           c.tax_category,
+           c.bank_account,
+           c.invoice_email,
+           c.updated_at
+         from master.customers c
+         where (
+           c.customer_name ilike $1
+           or coalesce(c.business_registration_no, '') ilike $1
+           or exists (
+             select 1
+             from master.customer_contacts cc
+             where cc.customer_id = c.id
+               and (
+                 cc.contact_name ilike $1
+                 or cc.mobile_phone ilike $1
+                 or cc.office_phone ilike $1
+               )
+           )
+           or exists (
+             select 1
+             from master.customer_assets a
+             where a.customer_id = c.id
+               and a.asset_name ilike $1
+           )
+           or exists (
+             select 1
+             from master.customer_equipments e
+             where e.customer_id = c.id
+               and (
+                 e.serial_no ilike $1
+                 or e.equipment_name ilike $1
+               )
+           )
          )
-         or exists (
-           select 1
-           from master.customer_assets a
-           where a.customer_id = c.id
-             and a.asset_name ilike $1
-         )
-         or exists (
-           select 1
-           from master.customer_equipments e
-           where e.customer_id = c.id
-             and (
-               e.serial_no ilike $1
-               or e.equipment_name ilike $1
-             )
-         )
-       )
-       order by c.updated_at desc, c.customer_name asc
-       limit 100`,
+         order by c.updated_at desc, c.customer_name asc
+         limit 100
+       ) matched
+       left join lateral (
+         select
+           cc.contact_name,
+           cc.mobile_phone,
+           cc.office_phone
+         from master.customer_contacts cc
+         where cc.customer_id = matched.id
+         order by cc.is_primary desc, cc.updated_at desc
+         limit 1
+       ) pc on true
+       left join lateral (
+         select count(*)::int as asset_count
+         from master.customer_assets a
+         where a.customer_id = matched.id
+       ) ac on true
+       left join lateral (
+         select count(*)::int as equipment_count
+         from master.customer_equipments e
+         where e.customer_id = matched.id
+       ) ec on true
+       order by matched.updated_at desc, matched.customer_name asc`,
       [searchValue],
     );
 
@@ -414,6 +509,9 @@ export class CustomerService {
       representative_name: string | null;
       company_phone: string;
       company_email: string;
+      tax_category: string;
+      bank_account: string;
+      invoice_email: string;
       business_category: string;
       business_item: string;
       opening_date: Date | null;
@@ -434,6 +532,9 @@ export class CustomerService {
          c.representative_name,
          c.company_phone,
          c.company_email,
+         c.tax_category,
+         c.bank_account,
+         c.invoice_email,
          c.business_category,
          c.business_item,
          c.opening_date,
@@ -506,6 +607,7 @@ export class CustomerService {
         customer_id: string;
         asset_name: string;
         asset_type: "VESSEL" | "SITE_EQUIPMENT";
+        vessel_type: string;
         asset_code: string;
         status: string;
         registration_no: string;
@@ -600,6 +702,9 @@ export class CustomerService {
         ...mapCustomerSummary(customer),
         businessCategory: customer.business_category,
         businessItem: customer.business_item,
+        taxCategory: customer.tax_category,
+        bankAccount: customer.bank_account,
+        invoiceEmail: customer.invoice_email,
         openingDate: customer.opening_date?.toISOString().slice(0, 10) || null,
         notes: customer.notes,
       },
@@ -629,8 +734,9 @@ export class CustomerService {
       await client.query(
         `insert into master.customers (
            id, customer_no, customer_name, customer_type, status, business_registration_no, representative_name,
-           company_phone, company_email, business_category, business_item, opening_date, notes, created_by, updated_by
-         ) values ($1, $2, $3, $4, 'ACTIVE', $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)`,
+           company_phone, company_email, business_category, business_item, tax_category, bank_account, invoice_email,
+           opening_date, notes, created_by, updated_by
+         ) values ($1, $2, $3, $4, 'ACTIVE', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)`,
         [
           customerId,
           customerNo,
@@ -642,6 +748,9 @@ export class CustomerService {
           text(input.company_email),
           text(input.business_category),
           text(input.business_item),
+          text(input.tax_category),
+          text(input.bank_account),
+          text(input.invoice_email),
           nullableText(input.opening_date),
           text(input.notes),
           actorUserId,
@@ -667,6 +776,158 @@ export class CustomerService {
         customer: detail,
         duplicates: duplicateResult.rows,
       };
+    });
+  }
+
+  async updateCustomerMemo(customerId: string, input: Record<string, unknown>, actorUserId: string) {
+    return withTransaction(async (client) => {
+      await client.query(
+        `update master.customers
+         set notes = $2,
+             updated_at = now(),
+             updated_by = $3
+         where id = $1`,
+        [customerId, text(input.notes), actorUserId],
+      );
+
+      return this.getCustomerById(customerId, client);
+    });
+  }
+
+  async updateCustomer(customerId: string, input: Record<string, unknown>, actorUserId: string) {
+    return withTransaction(async (client) => {
+      const customerResult = await client.query<{ id: string }>(`select id from master.customers where id = $1`, [customerId]);
+      if (!customerResult.rows[0]) {
+        return null;
+      }
+
+      const customerFields: Array<[string, string, (value: unknown) => string | null]> = [
+        ["customer_name", "customer_name", (value) => text(value)],
+        ["customer_type", "customer_type", (value) => (text(value) === "SHIP_OWNER" ? "SHIP_OWNER" : "GENERAL")],
+        ["business_registration_no", "business_registration_no", nullableText],
+        ["representative_name", "representative_name", (value) => text(value)],
+        ["company_phone", "company_phone", (value) => text(value)],
+        ["company_email", "company_email", (value) => text(value)],
+        ["business_category", "business_category", (value) => text(value)],
+        ["business_item", "business_item", (value) => text(value)],
+        ["tax_category", "tax_category", (value) => text(value)],
+        ["bank_account", "bank_account", (value) => text(value)],
+        ["invoice_email", "invoice_email", (value) => text(value)],
+        ["opening_date", "opening_date", nullableText],
+        ["notes", "notes", (value) => text(value)],
+      ];
+      const assignments: string[] = [];
+      const values: unknown[] = [customerId];
+      for (const [key, column, normalize] of customerFields) {
+        if (hasInput(input, key)) {
+          values.push(normalize(input[key]));
+          assignments.push(`${column} = $${values.length}`);
+        }
+      }
+
+      if (assignments.length) {
+        values.push(actorUserId);
+        await client.query(
+          `update master.customers
+           set ${assignments.join(", ")},
+               updated_at = now(),
+               updated_by = $${values.length}
+           where id = $1`,
+          values,
+        );
+      }
+
+      if (hasInput(input, "postal_code") || hasInput(input, "address_line_1") || hasInput(input, "address_line_2")) {
+        const addressResult = await client.query<{ id: string }>(
+          `select id
+           from master.customer_addresses
+           where customer_id = $1
+           order by case when address_type = 'BUSINESS' then 0 else 1 end, updated_at desc
+           limit 1`,
+          [customerId],
+        );
+        const address = addressResult.rows[0];
+        if (address) {
+          const addressAssignments: string[] = [];
+          const addressValues: unknown[] = [address.id];
+          for (const [key, column] of [
+            ["postal_code", "postal_code"],
+            ["address_line_1", "address_line_1"],
+            ["address_line_2", "address_line_2"],
+          ] as const) {
+            if (hasInput(input, key)) {
+              addressValues.push(text(input[key]));
+              addressAssignments.push(`${column} = $${addressValues.length}`);
+            }
+          }
+          addressValues.push(actorUserId);
+          await client.query(
+            `update master.customer_addresses
+             set ${addressAssignments.join(", ")},
+                 updated_at = now(),
+                 updated_by = $${addressValues.length}
+             where id = $1`,
+            addressValues,
+          );
+        } else {
+          await client.query(
+            `insert into master.customer_addresses (
+               id, customer_id, address_type, postal_code, address_line_1, address_line_2, notes, created_by, updated_by
+             ) values ($1, $2, 'BUSINESS', $3, $4, $5, '', $6, $6)`,
+            [
+              crypto.randomUUID(),
+              customerId,
+              text(input.postal_code),
+              text(input.address_line_1),
+              text(input.address_line_2),
+              actorUserId,
+            ],
+          );
+        }
+      }
+
+      if (hasInput(input, "contact_name") || hasInput(input, "contact_phone")) {
+        const contactResult = await client.query<{ id: string }>(
+          `select id
+           from master.customer_contacts
+           where customer_id = $1
+           order by is_primary desc, updated_at desc
+           limit 1`,
+          [customerId],
+        );
+        const contact = contactResult.rows[0];
+        if (contact) {
+          const contactAssignments: string[] = [];
+          const contactValues: unknown[] = [contact.id];
+          if (hasInput(input, "contact_name")) {
+            contactValues.push(text(input.contact_name));
+            contactAssignments.push(`contact_name = $${contactValues.length}`);
+          }
+          if (hasInput(input, "contact_phone")) {
+            contactValues.push(text(input.contact_phone));
+            contactAssignments.push(`mobile_phone = $${contactValues.length}`);
+          }
+          contactValues.push(actorUserId);
+          await client.query(
+            `update master.customer_contacts
+             set ${contactAssignments.join(", ")},
+                 updated_at = now(),
+                 updated_by = $${contactValues.length}
+             where id = $1`,
+            contactValues,
+          );
+        } else {
+          await client.query(
+            `insert into master.customer_contacts (
+               id, customer_id, contact_name, contact_role, department_name, job_title, mobile_phone, office_phone, email,
+               is_primary, notes, created_by, updated_by
+             ) values ($1, $2, $3, 'STAFF', '', '', $4, '', '', true, '', $5, $5)`,
+            [crypto.randomUUID(), customerId, text(input.contact_name), text(input.contact_phone), actorUserId],
+          );
+        }
+      }
+
+      return this.getCustomerById(customerId, client);
     });
   }
 
@@ -702,6 +963,59 @@ export class CustomerService {
     });
   }
 
+  async updateContact(contactId: string, input: Record<string, unknown>, actorUserId: string) {
+    return withTransaction(async (client) => {
+      const contactResult = await client.query<{ id: string; customer_id: string }>(
+        `select id, customer_id from master.customer_contacts where id = $1`,
+        [contactId],
+      );
+      const contact = contactResult.rows[0];
+      if (!contact) {
+        return null;
+      }
+
+      const contactFields: Array<[string, string, (value: unknown) => string | boolean]> = [
+        ["contact_name", "contact_name", (value) => text(value)],
+        ["contact_role", "contact_role", (value) => text(value, "STAFF")],
+        ["department_name", "department_name", (value) => text(value)],
+        ["job_title", "job_title", (value) => text(value)],
+        ["mobile_phone", "mobile_phone", (value) => text(value)],
+        ["office_phone", "office_phone", (value) => text(value)],
+        ["email", "email", (value) => text(value)],
+        ["is_primary", "is_primary", booleanValue],
+        ["notes", "notes", (value) => text(value)],
+      ];
+      const assignments: string[] = [];
+      const values: unknown[] = [contactId];
+      for (const [key, column, normalize] of contactFields) {
+        if (hasInput(input, key)) {
+          values.push(normalize(input[key]));
+          assignments.push(`${column} = $${values.length}`);
+        }
+      }
+
+      if (assignments.length) {
+        values.push(actorUserId);
+        if (booleanValue(input.is_primary)) {
+          await client.query(`update master.customer_contacts set is_primary = false, updated_at = now(), updated_by = $2 where customer_id = $1`, [
+            contact.customer_id,
+            actorUserId,
+          ]);
+        }
+        await client.query(
+          `update master.customer_contacts
+           set ${assignments.join(", ")},
+               updated_by = $${values.length},
+               updated_at = now()
+           where id = $1`,
+          values,
+        );
+      }
+
+      return this.getCustomerById(contact.customer_id, client);
+    });
+  }
+
   async addAddress(customerId: string, input: Record<string, unknown>, actorUserId: string) {
     return withTransaction(async (client) => {
       const addressId = crypto.randomUUID();
@@ -730,13 +1044,14 @@ export class CustomerService {
       const assetId = crypto.randomUUID();
       await client.query(
         `insert into master.customer_assets (
-           id, customer_id, asset_name, asset_type, asset_code, status, registration_no, imo_no, location_description, notes, created_by, updated_by
-         ) values ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7, $8, $9, $10, $10)`,
+           id, customer_id, asset_name, asset_type, vessel_type, asset_code, status, registration_no, imo_no, location_description, notes, created_by, updated_by
+         ) values ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, $8, $9, $10, $11, $11)`,
         [
           assetId,
           customerId,
           text(input.asset_name),
           text(input.asset_type, "SITE_EQUIPMENT"),
+          text(input.vessel_type),
           text(input.asset_code),
           text(input.registration_no),
           text(input.imo_no),
@@ -747,6 +1062,70 @@ export class CustomerService {
       );
 
       return this.getCustomerById(customerId, client);
+    });
+  }
+
+  async updateAsset(assetId: string, input: Record<string, unknown>, actorUserId: string) {
+    return withTransaction(async (client) => {
+      const assetResult = await client.query<{ id: string; customer_id: string }>(
+        `select id, customer_id from master.customer_assets where id = $1`,
+        [assetId],
+      );
+      const asset = assetResult.rows[0];
+      if (!asset) {
+        return null;
+      }
+
+      const assetFields: Array<[string, string, (value: unknown) => string]> = [
+        ["asset_name", "asset_name", (value) => text(value)],
+        ["asset_type", "asset_type", (value) => text(value, "SITE_EQUIPMENT")],
+        ["vessel_type", "vessel_type", (value) => text(value)],
+        ["asset_code", "asset_code", (value) => text(value)],
+        ["registration_no", "registration_no", (value) => text(value)],
+        ["imo_no", "imo_no", (value) => text(value)],
+        ["location_description", "location_description", (value) => text(value)],
+        ["notes", "notes", (value) => text(value)],
+      ];
+      const assignments: string[] = [];
+      const values: unknown[] = [assetId];
+      for (const [key, column, normalize] of assetFields) {
+        if (hasInput(input, key)) {
+          values.push(normalize(input[key]));
+          assignments.push(`${column} = $${values.length}`);
+        }
+      }
+
+      if (assignments.length) {
+        values.push(actorUserId);
+        await client.query(
+          `update master.customer_assets
+           set ${assignments.join(", ")},
+               updated_by = $${values.length},
+               updated_at = now()
+           where id = $1`,
+          values,
+        );
+      }
+
+      return this.getCustomerById(asset.customer_id, client);
+    });
+  }
+
+  async deleteAsset(assetId: string) {
+    return withTransaction(async (client) => {
+      const assetResult = await client.query<{ id: string; customer_id: string }>(
+        `select id, customer_id from master.customer_assets where id = $1`,
+        [assetId],
+      );
+      const asset = assetResult.rows[0];
+      if (!asset) {
+        return null;
+      }
+
+      await client.query(`delete from master.customer_equipments where asset_id = $1`, [assetId]);
+      await client.query(`delete from master.customer_assets where id = $1`, [assetId]);
+
+      return this.getCustomerById(asset.customer_id, client);
     });
   }
 
@@ -785,6 +1164,70 @@ export class CustomerService {
       );
 
       return this.getCustomerById(asset.customer_id, client);
+    });
+  }
+
+  async updateEquipment(equipmentId: string, input: Record<string, unknown>, actorUserId: string) {
+    return withTransaction(async (client) => {
+      const equipmentResult = await client.query<{ id: string; customer_id: string }>(
+        `select id, customer_id from master.customer_equipments where id = $1`,
+        [equipmentId],
+      );
+      const equipment = equipmentResult.rows[0];
+      if (!equipment) {
+        return null;
+      }
+
+      const equipmentFields: Array<[string, string, (value: unknown) => string | null]> = [
+        ["equipment_name", "equipment_name", (value) => text(value)],
+        ["equipment_type", "equipment_type", (value) => text(value, "OTHER")],
+        ["serial_no", "serial_no", (value) => text(value)],
+        ["installation_position", "installation_position", (value) => text(value)],
+        ["engine_model_id", "engine_model_id", nullableText],
+        ["gearbox_model_id", "gearbox_model_id", nullableText],
+        ["manufacturer", "manufacturer", (value) => text(value)],
+        ["model_name", "model_name", (value) => text(value)],
+        ["notes", "notes", (value) => text(value)],
+      ];
+      const assignments: string[] = [];
+      const values: unknown[] = [equipmentId];
+      for (const [key, column, normalize] of equipmentFields) {
+        if (hasInput(input, key)) {
+          values.push(normalize(input[key]));
+          assignments.push(`${column} = $${values.length}`);
+        }
+      }
+
+      if (assignments.length) {
+        values.push(actorUserId);
+        await client.query(
+          `update master.customer_equipments
+           set ${assignments.join(", ")},
+               updated_by = $${values.length},
+               updated_at = now()
+           where id = $1`,
+          values,
+        );
+      }
+
+      return this.getCustomerById(equipment.customer_id, client);
+    });
+  }
+
+  async deleteEquipment(equipmentId: string) {
+    return withTransaction(async (client) => {
+      const equipmentResult = await client.query<{ id: string; customer_id: string }>(
+        `select id, customer_id from master.customer_equipments where id = $1`,
+        [equipmentId],
+      );
+      const equipment = equipmentResult.rows[0];
+      if (!equipment) {
+        return null;
+      }
+
+      await client.query(`delete from master.customer_equipments where id = $1`, [equipmentId]);
+
+      return this.getCustomerById(equipment.customer_id, client);
     });
   }
 
@@ -880,6 +1323,23 @@ export class CustomerService {
     );
     const models = await this.listGearboxModels(text(input.model_name));
     return models.find((item) => item.id === id) || null;
+  }
+
+  async listEquipmentMasterOptions(optionType?: string) {
+    const type = text(optionType);
+    const result = await query<{
+      id: string;
+      option_type: string;
+      option_value: string;
+    }>(
+      `select id, option_type, option_value
+       from master.equipment_master_options
+       where status = 'ACTIVE'
+         and ($1::text = '' or option_type = $1)
+       order by option_type asc, option_value asc`,
+      [type],
+    );
+    return result.rows.map(mapEquipmentMasterOption);
   }
 
   async createFile(input: Record<string, unknown>, actorUserId: string) {

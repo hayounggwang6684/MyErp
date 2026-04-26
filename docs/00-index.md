@@ -81,6 +81,7 @@
 - [API 문서 지도](api/00-api-index.md)
 - [인증 및 세션 API](api/01-auth-and-session-api.md)
 - [사용자 및 권한 API](api/02-user-and-permission-api.md)
+- [고객 및 자산 API](api/07-customer-asset-api.md)
 - [수리 API](api/03-repair-api.md)
 - [재고 API](api/04-inventory-api.md)
 - [영업, 주문, 출하, 청구 API](api/05-sales-order-invoice-api.md)
@@ -188,6 +189,7 @@
 | [API 문서 지도](api/00-api-index.md) | API 경계, 공통 응답 형식, 구현 우선순위 |
 | [인증 및 세션 API](api/01-auth-and-session-api.md) | 로그인, MFA, 세션 조회, 로그아웃, 재인증, 세션 강제 종료 |
 | [사용자 및 권한 API](api/02-user-and-permission-api.md) | 사용자 생성, 상태 변경, 역할 재설정, 예외 권한 요청과 승인 |
+| [고객 및 자산 API](api/07-customer-asset-api.md) | 고객, 담당자, 선박, 장비, 기준정보 요청, 사업자등록증 보조 입력 |
 | [수리 API](api/03-repair-api.md) | 수리 접수, 진단, 작업 지시, 부품 사용, 완료 처리 |
 | [재고 API](api/04-inventory-api.md) | 현재고, 원장 조회, 입고, 출고, 이동, 조정 |
 | [영업, 주문, 출하, 청구 API](api/05-sales-order-invoice-api.md) | 견적, 주문, 판매, 출하, 청구 처리 |

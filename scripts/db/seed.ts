@@ -250,7 +250,7 @@ async function seed() {
   const engineModels = [
     {
       id: "eng_model_001",
-      manufacturer: "CAT",
+      manufacturer: "Caterpillar",
       modelName: "C18",
       engineType: "Marine Diesel",
       fuelType: "Diesel",
@@ -471,7 +471,7 @@ async function seed() {
   }
 
   const equipments = [
-    ["equip_001", "asset_001", "cust_001", "주기관 1번", "ENGINE", "ACTIVE", "ENG-TS-1001", "기관실 좌현", "eng_model_001", null, "CAT", "C18", "선박 주기관"],
+    ["equip_001", "asset_001", "cust_001", "주기관 1번", "ENGINE", "ACTIVE", "ENG-TS-1001", "기관실 좌현", "eng_model_001", null, "Caterpillar", "C18", "선박 주기관"],
     ["equip_002", "asset_001", "cust_001", "감속기 1번", "GEARBOX", "ACTIVE", "GB-TS-1001", "기관실 좌현", null, "gear_model_001", "ZF", "ZF305-2", "주기관 연결 감속기"],
     ["equip_003", "asset_002", "cust_002", "발전기 엔진", "ENGINE", "ACTIVE", "GEN-NH-2001", "발전실", "eng_model_002", null, "Cummins", "KTA38", "현장 발전 엔진"],
   ];

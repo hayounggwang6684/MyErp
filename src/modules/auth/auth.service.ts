@@ -9,6 +9,7 @@ import { sessionService } from "../sessions/index.js";
 import { userService } from "../users/index.js";
 
 const PASSWORD_LOCK_THRESHOLD = 5;
+const PASSWORD_MIN_LENGTH = 8;
 const OTP_WINDOW = 1;
 const OTP_ISSUER = "Sunjin ERP";
 
@@ -27,6 +28,51 @@ function buildSessionPayload(session: Awaited<ReturnType<typeof sessionService.c
 }
 
 export class AuthService {
+  async changePassword(userId: string, currentPassword: string, nextPassword: string) {
+    if (!currentPassword || !nextPassword) {
+      return {
+        success: false as const,
+        errorCode: "PASSWORD_REQUIRED",
+        message: "현재 비밀번호와 새 비밀번호를 입력하세요.",
+      };
+    }
+
+    if (nextPassword.length < PASSWORD_MIN_LENGTH) {
+      return {
+        success: false as const,
+        errorCode: "PASSWORD_POLICY_VIOLATION",
+        message: "새 비밀번호는 최소 8자 이상이어야 합니다.",
+      };
+    }
+
+    return withTransaction(async (client) => {
+      const user = await userService.getById(userId, client);
+      if (!user || user.status !== "ACTIVE") {
+        return {
+          success: false as const,
+          errorCode: "ACCOUNT_UNAVAILABLE",
+          message: "현재 계정을 사용할 수 없습니다.",
+        };
+      }
+
+      const passwordMatches = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!passwordMatches) {
+        return {
+          success: false as const,
+          errorCode: "CURRENT_PASSWORD_INVALID",
+          message: "현재 비밀번호가 맞지 않습니다.",
+        };
+      }
+
+      const nextPasswordHash = await bcrypt.hash(nextPassword, 10);
+      await userService.updatePasswordHash(user.id, nextPasswordHash, client);
+      return {
+        success: true as const,
+        data: { ok: true },
+      };
+    });
+  }
+
   async login(input: LoginInput, context: SessionContext) {
     return withTransaction(async (client) => {
       const user = await userService.findByUsername(input.username, client);

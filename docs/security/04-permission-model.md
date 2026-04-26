@@ -144,9 +144,11 @@ P -->|예| N
 - 특정 기능 접근은 부서가 아니라 역할로 열 수 있다. 예를 들어 `STAFF_VIEW` 권한이 있으면 관리부 소속이 아니어도 직원관리 탭을 볼 수 있다.
 - 일반 클라이언트의 업무 탭은 기본적으로 역할 기반으로 노출한다.
   - `고객관리`: `CUSTOMER_MANAGE`
-  - `수주관리`: `ORDER_MANAGE` 또는 `PARTS_SALES`
-  - `작업관리`: `WORK_MANAGE`
-  - `재고관리`: `INVENTORY_VIEW`
+  - `주문관리`: `ORDER_MANAGE` 또는 `PARTS_SALES`
+  - `공사관리`: `WORK_MANAGE`
+  - `자산관리`: `CUSTOMER_MANAGE` 또는 `INVENTORY_VIEW`
+  - `부품관리`: `INVENTORY_VIEW`
+  - `청구관리`: `INVOICE_MANAGE` 기준으로 설계하며, 프론트 시연 단계에서는 `ORDER_MANAGE` 또는 `PARTS_SALES`도 임시 노출할 수 있다.
   - `직원관리`: `STAFF_VIEW` 또는 `관리부`
 
 ## 11. 적용 원칙

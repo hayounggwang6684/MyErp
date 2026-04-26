@@ -63,8 +63,7 @@
         const response = await fetch("/admin/api/v1/auth/login", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-            "x-demo-mtls-verified": "true"
+            "Content-Type": "application/json"
           },
           body: JSON.stringify(payload)
         });

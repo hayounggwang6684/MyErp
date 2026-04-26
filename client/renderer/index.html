@@ -8,7 +8,7 @@
   </head>
   <body>
     <main class="content-shell">
-      <section id="login-screen" class="screen active">
+      <section id="login-screen" class="screen">
         <div class="auth-layout">
           <section class="brand-panel">
             <p class="brand-top">SHERWOOD</p>
@@ -123,17 +123,18 @@
       <section id="dashboard-screen" class="screen">
         <div class="dashboard-shell">
           <nav id="dashboard-tabs" class="dashboard-tabs" aria-label="운영 탭"></nav>
-
-          <section class="dashboard-section-header">
-            <div>
-              <p id="dashboard-section-title" class="section-title">수주관리</p>
-              <p id="dashboard-section-copy" class="section-copy">견적부터 승인, 출하 예정 건까지 수주 흐름을 기준으로 현재 진행 상황을 확인합니다.</p>
-            </div>
-            <div id="dashboard-actions" class="quick-actions"></div>
-          </section>
+          <nav id="workspace-tabs" class="workspace-tabs" aria-label="열린 업무 화면"></nav>
 
           <section id="dashboard-main-pane">
+            <section id="workspace-empty" class="workspace-empty hidden">
+              <div class="workspace-empty-logo" aria-label="Sunjin ERP">S</div>
+              <p>Sunjin ERP</p>
+            </section>
             <section id="customer-workspace" class="customer-workspace hidden"></section>
+            <section id="order-workspace" class="order-workspace hidden"></section>
+            <section id="project-workspace" class="project-workspace hidden"></section>
+            <section id="invoice-workspace" class="invoice-workspace hidden"></section>
+            <section id="asset-workspace" class="asset-workspace hidden"></section>
             <section id="dashboard-cards" class="dashboard-card-grid"></section>
             <section class="dashboard-table-panel info-card">
               <p class="eyebrow">최근 현황</p>
@@ -156,20 +157,52 @@
                 <span>최근 로그인 아이디 표시</span>
               </label>
               <div class="field">
-                <label>기본 접속 범위 테스트값</label>
-                <div class="scope-toggle" role="group" aria-label="기본 접속 범위 테스트">
-                  <button type="button" class="scope-toggle-button settings-scope-button" data-scope="AUTO">자동</button>
-                  <button type="button" class="scope-toggle-button settings-scope-button" data-scope="INTERNAL">내부망</button>
-                  <button type="button" class="scope-toggle-button settings-scope-button" data-scope="EXTERNAL">외부망</button>
-                </div>
+                <label for="settings-default-tab">로그인 후 기본 탭</label>
+                <select id="settings-default-tab" class="text-field">
+                  <option value="orders">주문관리</option>
+                  <option value="customers">고객관리</option>
+                  <option value="work">공사관리</option>
+                  <option value="assets">자산관리</option>
+                  <option value="inventory">재고관리</option>
+                  <option value="invoices">청구관리</option>
+                  <option value="staff">직원관리</option>
+                  <option value="settings">설정</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="settings-density">화면 밀도</label>
+                <select id="settings-density" class="text-field">
+                  <option value="COMFORTABLE">기본 간격</option>
+                  <option value="COMPACT">촘촘한 목록</option>
+                </select>
               </div>
               <div id="settings-feedback" class="message info">개인화 설정을 이 화면에서 바로 저장합니다.</div>
             </article>
             <article class="info-card settings-card">
-              <p class="eyebrow">앱 정보</p>
+              <p class="eyebrow">계정 관리</p>
+              <form id="settings-password-form" class="settings-password-form">
+                <div class="field">
+                  <label for="settings-current-password">현재 비밀번호</label>
+                  <input id="settings-current-password" name="current_password" class="password-field" type="password" autocomplete="current-password" />
+                </div>
+                <div class="field">
+                  <label for="settings-next-password">새 비밀번호</label>
+                  <input id="settings-next-password" name="next_password" class="password-field" type="password" autocomplete="new-password" />
+                </div>
+                <div class="field">
+                  <label for="settings-next-password-confirm">새 비밀번호 확인</label>
+                  <input id="settings-next-password-confirm" name="next_password_confirm" class="password-field" type="password" autocomplete="new-password" />
+                </div>
+                <div id="settings-password-feedback" class="message info">비밀번호는 서버에서 현재 비밀번호 확인 후 변경됩니다.</div>
+                <div class="settings-actions-row">
+                  <button class="primary-button" type="submit">비밀번호 수정</button>
+                </div>
+              </form>
+            </article>
+            <article class="info-card settings-card">
+              <p class="eyebrow">시스템 정보</p>
               <div class="settings-list">
-                <div class="stack-item"><span>현재 버전</span><span id="dashboard-app-version" class="status-badge neutral">확인 중</span></div>
-                <div class="stack-item"><span>저장된 최근 아이디</span><span id="settings-remembered-username" class="status-badge neutral">없음</span></div>
+                <div class="stack-item"><span>서버 동기화</span><span id="settings-server-sync" class="status-badge neutral">확인 중</span></div>
                 <div class="stack-item"><span>Cloudflare Access</span><span id="settings-cloudflare-access" class="status-badge neutral">확인 중</span></div>
                 <div class="stack-item"><span>업데이트 방식</span><span id="settings-update-mode" class="status-badge neutral">확인 중</span></div>
               </div>
@@ -182,6 +215,15 @@
         </div>
       </section>
     </main>
+    <script src="./app-dialog.js"></script>
+    <script src="./app-design-mode.js"></script>
+    <script src="./app-invoice.js"></script>
+    <script src="./app-invoice-actions.js"></script>
+    <script src="./app-project.js"></script>
+    <script src="./app-project-actions.js"></script>
+    <script src="./app-order.js"></script>
+    <script src="./app-order-documents.js"></script>
+    <script src="./app-order-actions.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

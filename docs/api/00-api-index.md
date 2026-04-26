@@ -30,10 +30,11 @@
 
 1. [인증 및 세션 API](01-auth-and-session-api.md)
 2. [사용자 및 권한 API](02-user-and-permission-api.md)
-3. [수리 API](03-repair-api.md)
-4. [재고 API](04-inventory-api.md)
-5. [영업, 주문, 출하, 청구 API](05-sales-order-invoice-api.md)
-6. [파일 API](06-file-api.md)
+3. [고객 및 자산 API](07-customer-asset-api.md)
+4. [수리 API](03-repair-api.md)
+5. [재고 API](04-inventory-api.md)
+6. [영업, 주문, 출하, 청구 API](05-sales-order-invoice-api.md)
+7. [파일 API](06-file-api.md)
 
 ## 4. 공통 규칙
 
@@ -92,10 +93,11 @@
 
 1. 인증 및 세션 API
 2. 사용자 및 권한 API
-3. 수리 API
-4. 재고 API
-5. 영업, 주문, 출하, 청구 API
-6. 파일 API
+3. 고객 및 자산 API
+4. 수리 API
+5. 재고 API
+6. 영업, 주문, 출하, 청구 API
+7. 파일 API
 
 ## 6. 향후 보완 항목
 

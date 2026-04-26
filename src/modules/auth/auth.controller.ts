@@ -1,70 +1,34 @@
 import type { Request, Response } from "express";
 import { authService } from "./auth.service.js";
-import { clearAuthCookie, readAuthCookie, writeAuthCookie } from "../../shared/utils/cookies.js";
+import {
+  clearAuthCookie,
+  clearPendingAuthCookie,
+  readAuthCookie,
+  readPendingAuthCookie,
+  writeAuthCookie,
+  writePendingAuthCookie,
+} from "../../shared/utils/cookies.js";
 import { sendJson } from "../../shared/utils/responses.js";
 import { sessionService } from "../sessions/index.js";
 import type { AppUser } from "../users/user.types.js";
 import type { SessionContext } from "./auth.types.js";
-
-function normalizeIp(value: string | undefined) {
-  return String(value || "")
-    .replace(/^::ffff:/, "")
-    .trim();
-}
-
-function isPrivateIpv4(ip: string) {
-  return ip === "127.0.0.1" || ip === "localhost" || ip.startsWith("10.") || ip.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip);
-}
-
-function resolveClientIp(request: Request) {
-  const forwarded = request.header("x-forwarded-for");
-  if (forwarded) {
-    return normalizeIp(forwarded.split(",")[0]);
-  }
-
-  return normalizeIp(request.ip || request.socket.remoteAddress);
-}
+import { getRequestIp, getRequestTlsContext, resolveRequestAccessScope } from "../../shared/utils/request-security.js";
 
 function buildSessionContext(request: Request) {
-  const clientIp = resolveClientIp(request);
-  const isAdminRoute = request.path.startsWith("/admin");
-  const forcedAccessScope = request.header("x-demo-force-access-scope");
-  const resolvedAccessScope = isAdminRoute
-    ? ("LOCAL_ADMIN" as const)
-    : isPrivateIpv4(clientIp)
-      ? ("INTERNAL" as const)
-      : ("EXTERNAL" as const);
-  const accessScope =
-    forcedAccessScope === "INTERNAL" || forcedAccessScope === "EXTERNAL"
-      ? forcedAccessScope
-      : resolvedAccessScope;
+  const clientIp = getRequestIp(request);
+  const tlsContext = getRequestTlsContext(request);
 
   return {
-    mtlsVerified: request.header("x-demo-mtls-verified") === "true",
-    certificateFingerprint: request.header("x-demo-certificate-fingerprint") || "DEMO-CERT-001",
-    accessScope,
+    mtlsVerified: tlsContext.mtlsVerified,
+    certificateFingerprint: tlsContext.certificateFingerprint,
+    accessScope: resolveRequestAccessScope(request),
     deviceId: String(request.body.device_id || "device-win-001"),
     clientIp,
   };
 }
 
 function resolveAuthSessionId(request: Request) {
-  const cookieSessionId = readAuthCookie(request);
-  if (cookieSessionId) {
-    return cookieSessionId;
-  }
-
-  const headerSessionId = request.header("x-pending-session-id");
-  if (headerSessionId) {
-    return String(headerSessionId);
-  }
-
-  const bodySessionId = request.body?.pending_session_id;
-  if (bodySessionId) {
-    return String(bodySessionId);
-  }
-
-  return null;
+  return readPendingAuthCookie(request);
 }
 
 type SessionPayload = {
@@ -128,12 +92,14 @@ export class AuthController {
     }
 
     if (result.data.loginStatus === "AUTHENTICATED") {
-      writeAuthCookie(response, result.data.session.sessionId);
+      clearPendingAuthCookie(request, response);
+      writeAuthCookie(request, response, result.data.session.sessionId);
       sendSessionResponse(response, result.data.session, "AUTHENTICATED");
       return;
     }
 
-    writeAuthCookie(response, result.data.pendingSessionId);
+    clearAuthCookie(request, response);
+    writePendingAuthCookie(request, response, result.data.pendingSessionId);
     sendJson(response, 200, {
       success: true,
       data: {
@@ -141,8 +107,37 @@ export class AuthController {
         mfa_challenge_id: result.data.mfaChallengeId,
         account_status: result.data.accountStatus,
         access_scope: result.data.accessScope,
-        pending_session_id: result.data.pendingSessionId,
       },
+    });
+  };
+
+  changePassword = async (request: Request, response: Response) => {
+    const sessionId = readAuthCookie(request);
+    const session = sessionId ? await sessionService.getAuthenticatedSession(sessionId) : null;
+
+    if (!session) {
+      sendJson(response, 401, {
+        success: false,
+        errorCode: "AUTHENTICATION_REQUIRED",
+        message: "로그인이 필요합니다.",
+      });
+      return;
+    }
+
+    const result = await authService.changePassword(
+      session.user.id,
+      String(request.body.currentPassword || ""),
+      String(request.body.nextPassword || ""),
+    );
+
+    if (!result.success) {
+      sendJson(response, result.errorCode === "CURRENT_PASSWORD_INVALID" ? 401 : 400, result);
+      return;
+    }
+
+    sendJson(response, 200, {
+      success: true,
+      data: { ok: true },
     });
   };
 
@@ -155,7 +150,8 @@ export class AuthController {
       return;
     }
 
-    writeAuthCookie(response, result.data.sessionId);
+    clearPendingAuthCookie(request, response);
+    writeAuthCookie(request, response, result.data.sessionId);
     sendSessionResponse(response, result.data);
   };
 
@@ -189,7 +185,8 @@ export class AuthController {
       return;
     }
 
-    writeAuthCookie(response, result.data.sessionId);
+    clearPendingAuthCookie(request, response);
+    writeAuthCookie(request, response, result.data.sessionId);
     sendSessionResponse(response, result.data);
   };
 
@@ -227,7 +224,8 @@ export class AuthController {
 
   logout = async (request: Request, response: Response) => {
     await authService.logout(readAuthCookie(request));
-    clearAuthCookie(response);
+    clearAuthCookie(request, response);
+    clearPendingAuthCookie(request, response);
     sendJson(response, 200, { success: true });
   };
 }

@@ -182,6 +182,29 @@ code {
   font-weight: 700;
 }
 
+.field > span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.stack-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-700);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .text-field,
 .password-field,
 .otp-field {

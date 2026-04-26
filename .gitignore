@@ -3,3 +3,9 @@ node_modules/
 dist/
 .env
 client/constants.local.js
+.orchestra/
+.mcp.json
+.playwright-mcp/
+.serena/
+release/
+windows-sync-20260321/

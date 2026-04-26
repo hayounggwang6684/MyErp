@@ -326,6 +326,19 @@ export class UserService {
     );
   }
 
+  async updatePasswordHash(userId: string, passwordHash: string, client?: DbExecutor) {
+    const executor: DbExecutor = client ?? { query };
+    await executor.query(
+      `update identity.users
+       set password_hash = $2,
+           failed_password_attempts = 0,
+           last_failed_password_at = null,
+           updated_at = now()
+       where id = $1`,
+      [userId, passwordHash],
+    );
+  }
+
   async registerPasswordFailure(userId: string, nextCount: number, shouldLock: boolean, client?: DbExecutor) {
     const executor: DbExecutor = client ?? { query };
     await executor.query(

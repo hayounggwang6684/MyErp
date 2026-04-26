@@ -2,25 +2,17 @@ import express, { type Express, type Request, type Response } from "express";
 import path from "node:path";
 import { authController } from "../modules/auth/index.js";
 import { adminSecurityController } from "../modules/admin/index.js";
+import { userPreferenceController } from "../modules/users/index.js";
 import { customerController } from "../modules/customers/index.js";
+import { orderController } from "../modules/orders/index.js";
+import { assetController } from "../modules/assets/index.js";
 import { sessionService } from "../modules/sessions/index.js";
 import { renderTemplate } from "../shared/infrastructure/templates/render.js";
 import { getCookieValue } from "../shared/utils/cookies.js";
+import { isLocalRequest } from "../shared/utils/request-security.js";
 
 const authCookieName = "erp_demo_session";
 const staticAssetRoot = path.resolve(process.cwd(), "src/web/assets");
-
-function normalizeIp(value: string | undefined) {
-  return String(value || "")
-    .replace(/^::ffff:/, "")
-    .trim();
-}
-
-function isLocalRequest(request: Request) {
-  const forwarded = request.header("x-forwarded-for");
-  const clientIp = forwarded ? normalizeIp(forwarded.split(",")[0]) : normalizeIp(request.ip || request.socket.remoteAddress);
-  return clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "localhost";
-}
 
 async function getSessionFromRequest(request: Request) {
   const sessionId = getCookieValue(request.headers.cookie, authCookieName);
@@ -207,6 +199,7 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/v1/auth/access-scope", authController.getAccessScope);
   app.post("/api/v1/auth/login", authController.login);
+  app.post("/api/v1/me/password", authController.changePassword);
   app.post("/api/v1/auth/mfa/verify", authController.verifyMfa);
   app.post("/api/v1/auth/mfa/enrollment/start", authController.startMfaEnrollment);
   app.get("/api/v1/auth/mfa/enrollment/status", authController.getMfaEnrollmentStatus);
@@ -216,10 +209,19 @@ export function registerRoutes(app: Express) {
   app.get("/api/v1/customers", customerController.listCustomers);
   app.post("/api/v1/customers", customerController.createCustomer);
   app.get("/api/v1/customers/:customerId", customerController.getCustomer);
+  app.patch("/api/v1/customers/:customerId", customerController.updateCustomer);
+  app.patch("/api/v1/customers/:customerId/memo", customerController.updateMemo);
   app.post("/api/v1/customers/:customerId/contacts", customerController.addContact);
+  app.patch("/api/v1/contacts/:contactId", customerController.updateContact);
   app.post("/api/v1/customers/:customerId/addresses", customerController.addAddress);
   app.post("/api/v1/customers/:customerId/assets", customerController.addAsset);
+  app.patch("/api/v1/assets/:assetId", customerController.updateAsset);
+  app.delete("/api/v1/assets/:assetId", customerController.deleteAsset);
   app.post("/api/v1/assets/:assetId/equipments", customerController.addEquipment);
+  app.patch("/api/v1/equipments/:equipmentId", customerController.updateEquipment);
+  app.delete("/api/v1/equipments/:equipmentId", customerController.deleteEquipment);
+  app.post("/api/v1/master-data-requests", customerController.createMasterDataRequest);
+  app.get("/api/v1/master/equipment-options", customerController.listEquipmentMasterOptions);
   app.get("/api/v1/master/engine-models", customerController.listEngineModels);
   app.post("/api/v1/master/engine-models", customerController.createEngineModel);
   app.get("/api/v1/master/gearbox-models", customerController.listGearboxModels);
@@ -227,6 +229,20 @@ export function registerRoutes(app: Express) {
   app.post("/api/v1/files", customerController.createFile);
   app.post("/api/v1/files/:fileId/links", customerController.linkFile);
   app.post("/api/v1/customers/:customerId/business-license/extract", customerController.extractBusinessLicense);
+  app.get("/api/v1/orders", orderController.listOrders);
+  app.put("/api/v1/orders/:orderId", orderController.saveOrder);
+  app.delete("/api/v1/orders/:orderId", orderController.deleteOrder);
+  app.post("/api/v1/orders/merge", orderController.mergeOrders);
+  app.get("/api/v1/projects", orderController.listProjects);
+  app.get("/api/v1/assets/workspace", assetController.getWorkspace);
+  app.put("/api/v1/assets/physical/:assetId", assetController.savePhysicalAsset);
+  app.post("/api/v1/assets/physical", assetController.savePhysicalAsset);
+  app.delete("/api/v1/assets/physical/:assetId", assetController.deletePhysicalAsset);
+  app.put("/api/v1/assets/knowledge/:recordId", assetController.saveKnowledgeRecord);
+  app.post("/api/v1/assets/knowledge", assetController.saveKnowledgeRecord);
+  app.delete("/api/v1/assets/knowledge/:recordId", assetController.deleteKnowledgeRecord);
+  app.get("/api/v1/preferences", userPreferenceController.getCurrent);
+  app.put("/api/v1/preferences", userPreferenceController.updateCurrent);
   app.get("/api/v1/admin/users/security", adminSecurityController.listUsers);
   app.post("/api/v1/admin/users/:userId/unlock", adminSecurityController.unlockUser);
   app.post("/api/v1/admin/users/:userId/reset-mfa", adminSecurityController.resetUserMfa);
@@ -238,6 +254,10 @@ export function registerRoutes(app: Express) {
   app.get("/admin/api/v1/users/security", adminSecurityController.listUsers);
   app.get("/admin/api/v1/audit", adminSecurityController.listAuditEvents);
   app.get("/admin/api/v1/updates", adminSecurityController.getUpdateStatus);
+  app.get("/admin/api/v1/master-data-requests", adminSecurityController.listMasterDataRequests);
+  app.post("/admin/api/v1/master-data-requests/:requestId/approve", adminSecurityController.approveMasterDataRequest);
+  app.get("/admin/api/v1/preferences", userPreferenceController.getCurrent);
+  app.put("/admin/api/v1/preferences", userPreferenceController.updateCurrent);
   app.patch("/admin/api/v1/employees/:employeeId", adminSecurityController.updateEmployee);
   app.post("/admin/api/v1/users/:userId/status", adminSecurityController.updateUserStatus);
   app.put("/admin/api/v1/users/:userId/roles", adminSecurityController.updateUserRoles);

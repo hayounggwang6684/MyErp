@@ -52,6 +52,50 @@
             </div>
             <div id="overview-feedback" class="message info">운영 상태를 불러오는 중입니다.</div>
           </article>
+          <article class="info-card">
+            <p class="eyebrow">마스터 항목 요청</p>
+            <div id="master-request-list" class="stack-list">
+              <div class="stack-item"><span>요청 불러오는 중</span><span class="status-badge neutral">대기</span></div>
+            </div>
+          </article>
+          <article class="info-card">
+            <p class="eyebrow">개인 설정</p>
+            <form id="admin-preference-form" class="stack-form">
+              <label class="field">
+                <span>로그인 후 기본 탭</span>
+                <select id="admin-default-tab" class="text-field" name="defaultDashboardTab">
+                  <option value="orders">주문관리</option>
+                  <option value="customers">고객관리</option>
+                  <option value="work">공사관리</option>
+                  <option value="assets">자산관리</option>
+                  <option value="inventory">재고관리</option>
+                  <option value="staff">직원관리</option>
+                  <option value="settings">설정</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>화면 밀도</span>
+                <select id="admin-dashboard-density" class="text-field" name="dashboardDensity">
+                  <option value="COMFORTABLE">기본 간격</option>
+                  <option value="COMPACT">촘촘한 목록</option>
+                </select>
+              </label>
+              <label class="checkbox-row" for="admin-show-username">
+                <input id="admin-show-username" name="showRememberedUsername" type="checkbox" />
+                <span>최근 로그인 아이디 표시</span>
+              </label>
+              <label class="field">
+                <span>기본 접속 범위 테스트값</span>
+                <select id="admin-test-access-scope" class="text-field" name="testAccessScope">
+                  <option value="AUTO">자동</option>
+                  <option value="INTERNAL">내부망</option>
+                  <option value="EXTERNAL">외부망</option>
+                </select>
+              </label>
+              <button class="primary-button" type="submit">개인 설정 저장</button>
+            </form>
+            <div id="admin-preference-feedback" class="message info">Electron 설정 탭과 같은 서버 개인 설정을 사용합니다.</div>
+          </article>
         </section>
       </section>
     </main>
@@ -59,10 +103,18 @@
     <script>
       const grid = document.getElementById("overview-grid");
       const feedback = document.getElementById("overview-feedback");
+      const preferenceFeedback = document.getElementById("admin-preference-feedback");
+      const preferenceForm = document.getElementById("admin-preference-form");
+      const masterRequestList = document.getElementById("master-request-list");
 
       function setMessage(kind, message) {
         feedback.className = `message ${kind}`;
         feedback.textContent = message;
+      }
+
+      function setPreferenceMessage(kind, message) {
+        preferenceFeedback.className = `message ${kind}`;
+        preferenceFeedback.textContent = message;
       }
 
       async function loadOverview() {
@@ -98,7 +150,75 @@
         setMessage("info", "운영 현황과 최근 보안 이벤트 요약을 확인할 수 있습니다.");
       }
 
+      async function loadPreferences() {
+        const response = await fetch("/admin/api/v1/preferences");
+        const result = await response.json();
+
+        if (!response.ok) {
+          setPreferenceMessage("error", result.message || "개인 설정을 불러오지 못했습니다.");
+          return;
+        }
+
+        const preference = result.data;
+        document.getElementById("admin-default-tab").value = preference.defaultDashboardTab || "orders";
+        document.getElementById("admin-dashboard-density").value = preference.dashboardDensity || "COMFORTABLE";
+        document.getElementById("admin-show-username").checked = Boolean(preference.showRememberedUsername);
+        document.getElementById("admin-test-access-scope").value = preference.testAccessScope || "AUTO";
+        setPreferenceMessage("info", "개인 설정을 불러왔습니다.");
+      }
+
+      async function loadMasterRequests() {
+        const response = await fetch("/admin/api/v1/master-data-requests");
+        const result = await response.json();
+        if (!response.ok) {
+          masterRequestList.innerHTML = '<div class="stack-item"><span>요청 조회 실패</span><span class="status-badge warn">오류</span></div>';
+          return;
+        }
+
+        const requests = result.data || [];
+        masterRequestList.innerHTML = requests.length
+          ? requests.map((request) => `
+            <div class="stack-item">
+              <span>${request.field} · ${request.action} · ${request.value}${request.nextValue ? ` → ${request.nextValue}` : ""}</span>
+              ${
+                request.status === "PENDING"
+                  ? `<button class="secondary-button compact-button" type="button" data-master-request-approve="${request.id}">승인</button>`
+                  : '<span class="status-badge ok">승인됨</span>'
+              }
+            </div>
+          `).join("")
+          : '<div class="stack-item"><span>대기 요청 없음</span><span class="status-badge neutral">0건</span></div>';
+      }
+
+      preferenceForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const formData = Object.fromEntries(new FormData(preferenceForm).entries());
+        formData.showRememberedUsername = document.getElementById("admin-show-username").checked;
+
+        const response = await fetch("/admin/api/v1/preferences", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData)
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+          setPreferenceMessage("error", result.message || "개인 설정 저장에 실패했습니다.");
+          return;
+        }
+
+        setPreferenceMessage("info", "개인 설정을 저장했습니다.");
+      });
+
       document.getElementById("overview-refresh").addEventListener("click", loadOverview);
+      masterRequestList.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-master-request-approve]");
+        if (!button) {
+          return;
+        }
+        await fetch(`/admin/api/v1/master-data-requests/${encodeURIComponent(button.dataset.masterRequestApprove)}/approve`, { method: "POST" });
+        await loadMasterRequests();
+      });
       document.getElementById("admin-logout").addEventListener("click", async () => {
         await fetch("/admin/api/v1/auth/logout", { method: "POST" });
         window.location.href = "/admin/login";
@@ -106,6 +226,12 @@
 
       loadOverview().catch(() => {
         setMessage("error", "운영 현황 화면 초기화에 실패했습니다.");
+      });
+      loadPreferences().catch(() => {
+        setPreferenceMessage("error", "개인 설정 화면 초기화에 실패했습니다.");
+      });
+      loadMasterRequests().catch(() => {
+        masterRequestList.innerHTML = '<div class="stack-item"><span>요청 화면 초기화 실패</span><span class="status-badge warn">오류</span></div>';
       });
     </script>
   </body>

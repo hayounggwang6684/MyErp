@@ -3,7 +3,7 @@ export type CustomerStatus = "ACTIVE" | "INACTIVE";
 export type ContactRole = "OWNER" | "STAFF" | "MANAGER" | "ACCOUNTING" | "OTHER";
 export type AddressType = "BUSINESS" | "BILLING" | "SITE" | "VESSEL_MANAGEMENT";
 export type AssetType = "VESSEL" | "SITE_EQUIPMENT";
-export type EquipmentType = "ENGINE" | "GEARBOX" | "OTHER";
+export type EquipmentType = string;
 
 export type CustomerSummary = {
   id: string;
@@ -15,6 +15,9 @@ export type CustomerSummary = {
   representativeName: string | null;
   companyPhone: string;
   companyEmail: string;
+  taxCategory: string;
+  bankAccount: string;
+  invoiceEmail: string;
   primaryContactName: string | null;
   primaryContactPhone: string | null;
   assetCount: number;
@@ -54,6 +57,7 @@ export type CustomerAsset = {
   customerId: string;
   assetName: string;
   assetType: AssetType;
+  vesselType: string;
   assetCode: string;
   status: string;
   registrationNo: string;
@@ -100,6 +104,12 @@ export type GearboxModel = {
   torqueRating: string;
   notes: string;
   updatedAt: string;
+};
+
+export type EquipmentMasterOption = {
+  id: string;
+  optionType: string;
+  optionValue: string;
 };
 
 export type FileRecord = {

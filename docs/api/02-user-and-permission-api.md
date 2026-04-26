@@ -33,6 +33,10 @@
 | `PUT` | `/admin/api/v1/users/{userId}/roles` | Mac mini 로컬 관리자 화면용 사용자 역할 재설정 |
 | `POST` | `/admin/api/v1/users/{userId}/status` | Mac mini 로컬 관리자 화면용 계정 활성/비활성 전환 |
 | `PATCH` | `/admin/api/v1/employees/{employeeId}` | Mac mini 로컬 관리자 화면용 직원 기본정보 수정 |
+| `GET` | `/api/v1/preferences` | 현재 사용자 개인 설정 조회 |
+| `PUT` | `/api/v1/preferences` | 현재 사용자 개인 설정 저장 |
+| `GET` | `/admin/api/v1/preferences` | Mac mini 로컬 관리자 화면용 현재 관리자 개인 설정 조회 |
+| `PUT` | `/admin/api/v1/preferences` | Mac mini 로컬 관리자 화면용 현재 관리자 개인 설정 저장 |
 | `GET` | `/api/v1/me/permissions` | 현재 사용자 권한 조회 |
 | `POST` | `/api/v1/permission-exceptions` | 예외 권한 요청 |
 | `POST` | `/admin-api/v1/permission-exceptions/{requestId}/approve` | 예외 권한 승인 |
@@ -81,13 +85,37 @@
 }
 ```
 
-### 4.3 예외 권한 요청
+### 4.4 예외 권한 요청
 
 ```json
 {
   "permission_code": "INVENTORY_ADJUST_APPROVE",
   "reason": "월말 실사 차이 승인 필요",
   "expires_at": "2026-03-31T09:00:00Z"
+}
+```
+
+### 4.5 개인 설정 저장
+
+```json
+{
+  "defaultDashboardTab": "orders",
+  "dashboardDensity": "COMFORTABLE",
+  "showRememberedUsername": true,
+  "testAccessScope": "AUTO"
+}
+```
+
+개인 설정 응답:
+
+```json
+{
+  "userId": "usr_admin_001",
+  "defaultDashboardTab": "orders",
+  "dashboardDensity": "COMFORTABLE",
+  "showRememberedUsername": true,
+  "testAccessScope": "AUTO",
+  "updatedAt": "2026-04-15T00:00:00.000Z"
 }
 ```
 
@@ -101,6 +129,10 @@
 - `last_login_at`
 - `lock_reason`
 - `permission_exceptions`
+- `default_dashboard_tab`
+- `dashboard_density`
+- `show_remembered_username`
+- `test_access_scope`
 
 ## 6. 권한 및 재인증
 
@@ -109,7 +141,11 @@
 - 예외 권한 승인은 관리자 또는 보안 관리자만 가능하다.
 - Mac mini 로컬 관리자 화면은 `부서`와 별개로 사용자별 역할을 직접 부여할 수 있다.
 - 관리자 로컬 화면은 계정 상태 변경과 직원 기본정보 수정 기능을 함께 제공한다.
+- 개인 설정 API는 로그인된 사용자 자신의 설정만 조회/저장한다.
+- `/admin/api/v1/preferences`는 Mac mini 로컬 관리자 세션에서만 사용한다.
+- 자동 로그인 세션 저장 여부는 장치 로컬 설정이므로 개인 설정 API에 저장하지 않는다.
 
 ## 7. 구현 메모
 
 - 모듈 후보: `src/modules/users`, `src/modules/permissions`, `src/modules/audit`
+- 개인 설정 저장소: `identity.user_preferences`

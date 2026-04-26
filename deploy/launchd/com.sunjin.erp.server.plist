@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sunjin.erp.server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd "/Users/glory_ai_sever/Desktop/erp porject" &amp;&amp; HOST=127.0.0.1 DATABASE_URL='postgres://glory_ai_sever@localhost:5432/sunjin_erp' npm run start:db:prod</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>WorkingDirectory</key>
+  <string>/Users/glory_ai_sever/Desktop/erp porject</string>
+  <key>StandardOutPath</key>
+  <string>/Users/glory_ai_sever/Library/Logs/com.sunjin.erp.server.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/glory_ai_sever/Library/Logs/com.sunjin.erp.server.err.log</string>
+</dict>
+</plist>

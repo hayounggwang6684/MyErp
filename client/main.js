@@ -1,13 +1,15 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const { execFileSync } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { autoUpdater } = require("electron-updater");
 const clientConstants = require("./constants");
 
 let mainWindow = null;
 let splashWindow = null;
-let sessionCookie = "";
-let pendingSessionId = "";
+const sessionCookieJar = new Map();
 let runtimeAccessScope = "EXTERNAL";
 let resolvedServerUrl = "";
 let resolvedServerKind = "configured";
@@ -17,6 +19,7 @@ let splashOpenedAt = 0;
 let updateCheckInFlight = false;
 let startupRetryCount = 0;
 let backgroundRecheckTimer = null;
+let isQuitting = false;
 const defaultPreferences = {
   rememberedUsername: "",
   autoLoginEnabled: false,
@@ -24,7 +27,16 @@ const defaultPreferences = {
   accessScope: "EXTERNAL",
   testAccessScope: "AUTO",
   showRememberedUsername: true,
+  defaultDashboardTab: "orders",
+  dashboardDensity: "COMFORTABLE",
+  assetPhysicalColumnWidths: {},
 };
+const localOnlyPreferenceKeys = new Set([
+  "rememberedUsername",
+  "autoLoginEnabled",
+  "lastLoginAt",
+  "accessScope",
+]);
 
 function getCloudflareAccessConfig() {
   const accessConfig = clientConstants.cloudflareAccess || {};
@@ -79,21 +91,81 @@ function writePreferences(nextPreferences) {
   return mergedPreferences;
 }
 
-function readPersistedSession() {
-  const persisted = readJsonFile(getSessionPath(), { cookie: "" });
-  return typeof persisted.cookie === "string" ? persisted.cookie : "";
+function mergeServerPreferences(localPreferences, serverPreferences) {
+  const mergedPreferences = {
+    ...localPreferences,
+    ...(serverPreferences || {}),
+  };
+
+  for (const key of localOnlyPreferenceKeys) {
+    mergedPreferences[key] = localPreferences[key];
+  }
+
+  return mergedPreferences;
 }
 
-function writePersistedSession(cookieValue) {
-  writeJsonFile(getSessionPath(), { cookie: cookieValue });
+async function readPreferencesWithServerSync() {
+  const localPreferences = readPreferences();
+  if (!buildCookieHeader()) {
+    return localPreferences;
+  }
+
+  try {
+    const result = await apiRequest("GET", "/api/v1/preferences");
+    const mergedPreferences = writePreferences(mergeServerPreferences(localPreferences, result.data));
+    return mergedPreferences;
+  } catch {
+    return localPreferences;
+  }
+}
+
+async function writePreferencesWithServerSync(nextPreferences) {
+  const localPreferences = writePreferences(nextPreferences);
+  if (!buildCookieHeader()) {
+    return localPreferences;
+  }
+
+  try {
+    const result = await apiRequest("PUT", "/api/v1/preferences", localPreferences);
+    return writePreferences(mergeServerPreferences(localPreferences, result.data));
+  } catch {
+    return localPreferences;
+  }
+}
+
+function readPersistedSession() {
+  const savedSession = readJsonFile(getSessionPath(), null);
+  const cookies = Array.isArray(savedSession?.cookies) ? savedSession.cookies : [];
+  sessionCookieJar.clear();
+
+  for (const cookie of cookies) {
+    const name = String(cookie?.name || "").trim();
+    const value = String(cookie?.value || "");
+    if (name && value) {
+      sessionCookieJar.set(name, value);
+    }
+  }
+
+  return buildCookieHeader();
+}
+
+function writePersistedSession() {
+  const cookies = Array.from(sessionCookieJar.entries()).map(([name, value]) => ({ name, value }));
+  if (cookies.length === 0) {
+    clearPersistedSession();
+    return;
+  }
+
+  writeJsonFile(getSessionPath(), {
+    savedAt: new Date().toISOString(),
+    cookies,
+  });
 }
 
 function clearPersistedSession() {
   try {
     fs.rmSync(getSessionPath(), { force: true });
-  } catch {
-    writePersistedSession("");
-  }
+  } catch {}
 }
 
 function normalizeBaseUrl(serverUrl) {
@@ -146,25 +218,66 @@ function buildCandidateServerUrls(scopePreference = "AUTO") {
 
 function parseSetCookie(headerValue) {
   if (!headerValue) {
-    return "";
+    return null;
   }
 
-  return headerValue.split(";")[0];
+  const [cookiePair = "", ...attributeParts] = String(headerValue).split(";").map((segment) => segment.trim());
+  if (!cookiePair.includes("=")) {
+    return null;
+  }
+  const [name, ...valueParts] = cookiePair.split("=");
+  const attributes = attributeParts.reduce((result, part) => {
+    const [key, ...value] = part.split("=");
+    result[key.toLowerCase()] = value.join("=");
+    return result;
+  }, {});
+  return {
+    name,
+    value: valueParts.join("="),
+    attributes,
+  };
 }
 
-function readSetCookieHeader(headers) {
+function readSetCookieHeaders(headers) {
   if (!headers) {
-    return "";
+    return [];
   }
 
   if (typeof headers.getSetCookie === "function") {
     const values = headers.getSetCookie();
     if (Array.isArray(values) && values.length > 0) {
-      return values[0];
+      return values;
     }
   }
 
-  return headers.get("set-cookie") || "";
+  const singleValue = headers.get("set-cookie") || "";
+  return singleValue ? [singleValue] : [];
+}
+
+function applySetCookieHeaders(headers) {
+  for (const rawValue of readSetCookieHeaders(headers)) {
+    const parsed = parseSetCookie(rawValue);
+    if (!parsed?.name) {
+      continue;
+    }
+    const maxAge = Number(parsed.attributes["max-age"]);
+    const expiresAt = parsed.attributes.expires ? Date.parse(parsed.attributes.expires) : Number.NaN;
+    const shouldDelete =
+      parsed.value === "" ||
+      maxAge === 0 ||
+      (!Number.isNaN(expiresAt) && expiresAt <= Date.now());
+    if (shouldDelete) {
+      sessionCookieJar.delete(parsed.name);
+      continue;
+    }
+    sessionCookieJar.set(parsed.name, parsed.value);
+  }
+}
+
+function buildCookieHeader() {
+  return Array.from(sessionCookieJar.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
 }
 
 function sanitizeErrorSnippet(value) {
@@ -177,6 +290,159 @@ function sanitizeErrorSnippet(value) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 220);
+}
+
+function inferMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".pdf") {
+    return "application/pdf";
+  }
+  if (extension === ".png") {
+    return "image/png";
+  }
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+  if (extension === ".webp") {
+    return "image/webp";
+  }
+  if (extension === ".tif" || extension === ".tiff") {
+    return "image/tiff";
+  }
+  return "application/octet-stream";
+}
+
+function normalizeExtractedText(value) {
+  return String(value || "")
+    .replace(/\0/g, " ")
+    .replace(/[^\S\r\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function findExecutable(candidates) {
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
+function runTesseract(imagePath) {
+  const tesseractPath = findExecutable([
+    "/opt/homebrew/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    "/usr/bin/tesseract",
+  ]);
+  if (!tesseractPath) {
+    return "";
+  }
+
+  for (const language of ["kor+eng", "eng"]) {
+    try {
+      const output = execFileSync(tesseractPath, [imagePath, "stdout", "-l", language, "--psm", "6"], {
+        encoding: "utf8",
+        timeout: 20000,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      const normalized = normalizeExtractedText(output);
+      if (normalized) {
+        return normalized;
+      }
+    } catch {
+      // Retry with the next language option.
+    }
+  }
+
+  return "";
+}
+
+function extractTextWithLocalOcr(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  const isPdf = extension === ".pdf";
+  const isImage = [".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"].includes(extension);
+
+  if (!isPdf && !isImage) {
+    return "";
+  }
+
+  if (isImage) {
+    return runTesseract(filePath);
+  }
+
+  const pdftoppmPath = findExecutable([
+    "/opt/homebrew/bin/pdftoppm",
+    "/usr/local/bin/pdftoppm",
+    "/usr/bin/pdftoppm",
+  ]);
+  if (!pdftoppmPath) {
+    return "";
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sunjin-ocr-"));
+  const outputPrefix = path.join(tempDir, "page");
+  const outputImage = `${outputPrefix}.png`;
+  try {
+    execFileSync(pdftoppmPath, ["-r", "220", "-png", "-singlefile", filePath, outputPrefix], {
+      encoding: "utf8",
+      timeout: 20000,
+      maxBuffer: 1024 * 1024,
+    });
+    return fs.existsSync(outputImage) ? runTesseract(outputImage) : "";
+  } catch {
+    return "";
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function extractTextFromDocument(filePath, buffer) {
+  try {
+    const spotlightText = execFileSync("/usr/bin/mdls", ["-raw", "-name", "kMDItemTextContent", filePath], {
+      encoding: "utf8",
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
+    });
+    const normalizedSpotlightText = normalizeExtractedText(spotlightText);
+    if (normalizedSpotlightText && normalizedSpotlightText !== "(null)") {
+      return normalizedSpotlightText;
+    }
+  } catch {
+    // Spotlight text is best-effort only.
+  }
+
+  const ocrText = extractTextWithLocalOcr(filePath);
+  if (ocrText) {
+    return ocrText;
+  }
+
+  const readableText = normalizeExtractedText(buffer.toString("utf8").replace(/[^\x09\x0a\x0d\x20-\x7e가-힣ㄱ-ㅎㅏ-ㅣ0-9:./@()-]/g, " "));
+  const hasUsefulBusinessText = /(사업자|등록번호|상호|대표자|업태|종목|주소)/.test(readableText);
+  return hasUsefulBusinessText ? readableText.slice(0, 12000) : "";
+}
+
+function extractBusinessLicenseFields(source) {
+  const value = normalizeExtractedText(source).replace(/\s+/g, " ");
+  const pick = (patterns) => {
+    for (const pattern of patterns) {
+      const match = value.match(pattern);
+      if (match?.[1]) {
+        return match[1].trim();
+      }
+    }
+    return "";
+  };
+
+  return {
+    businessRegistrationNo: pick([/사업자등록번호[:\s]*([0-9-]{10,14})/i, /등록번호[:\s]*([0-9-]{10,14})/i]),
+    customerName: pick([/상호[:\s]*([^\s].*?)(?:\s(?:성명|대표자|사업장|업태|종목|개업|$))/i]),
+    representativeName: pick([/(?:성명|대표자)[:\s]*([^\s].*?)(?:\s(?:사업장|업태|종목|개업|$))/i]),
+    addressLine1: pick([/사업장(?:소재지)?[:\s]*([^\s].*?)(?:\s(?:업태|종목|개업|$))/i, /주소[:\s]*([^\s].*?)(?:\s(?:업태|종목|개업|$))/i]),
+    businessCategory: pick([/업태[:\s]*([^\s].*?)(?:\s(?:종목|개업|$))/i]),
+    businessItem: pick([/종목[:\s]*([^\s].*?)(?:\s(?:개업|$))/i]),
+    openingDate: pick([/개업(?:연월일)?[:\s]*([0-9]{4}[-./][0-9]{2}[-./][0-9]{2})/i]).replaceAll(".", "-").replaceAll("/", "-"),
+  };
 }
 
 function normalizeVersionTag(value) {
@@ -234,32 +500,14 @@ function buildRequestHeaders(routePath, options = {}, baseUrl = getConfiguredSer
     "Content-Type": "application/json",
   };
 
-  if (sessionCookie) {
-    headers.Cookie = sessionCookie;
+  const cookieHeader = buildCookieHeader();
+  if (cookieHeader) {
+    headers.Cookie = cookieHeader;
   }
 
   if (!isLocalServerUrl(baseUrl) && cloudflareAccess.enabled) {
     headers["CF-Access-Client-Id"] = cloudflareAccess.clientId;
     headers["CF-Access-Client-Secret"] = cloudflareAccess.clientSecret;
-  }
-
-  if (options.pendingSessionId) {
-    headers["x-pending-session-id"] = options.pendingSessionId;
-  }
-
-  if (routePath === "/api/v1/auth/login") {
-    headers["x-demo-mtls-verified"] = "true";
-  }
-
-  const forcedScope =
-    options.testAccessScope && options.testAccessScope !== "AUTO"
-      ? options.testAccessScope
-      : preferences.testAccessScope && preferences.testAccessScope !== "AUTO"
-        ? preferences.testAccessScope
-        : clientConstants.forceAccessScopeForTesting;
-
-  if (forcedScope) {
-    headers["x-demo-force-access-scope"] = forcedScope;
   }
 
   return headers;
@@ -321,16 +569,14 @@ async function resolveServerUrl(options = {}) {
 function persistCurrentSessionIfAllowed(scopeOverride) {
   const preferences = readPreferences();
   const resolvedScope = scopeOverride || preferences.accessScope || runtimeAccessScope;
+  runtimeAccessScope = resolvedScope;
 
-  if (!preferences.autoLoginEnabled) {
+  if (!preferences.autoLoginEnabled || !buildCookieHeader()) {
     clearPersistedSession();
     return;
   }
 
-  if (resolvedScope === "INTERNAL" && sessionCookie) {
-    writePersistedSession(sessionCookie);
-    return;
-  }
+  writePersistedSession();
 }
 
 async function apiRequest(method, routePath, body, options = {}) {
@@ -355,10 +601,7 @@ async function apiRequest(method, routePath, body, options = {}) {
     );
   }
 
-  const setCookie = readSetCookieHeader(response.headers);
-  if (setCookie) {
-    sessionCookie = parseSetCookie(setCookie);
-  }
+  applySetCookieHeaders(response.headers);
 
   const contentType = response.headers.get("content-type") || "";
   const responseBody = contentType.includes("application/json")
@@ -615,7 +858,9 @@ function createMainWindow() {
     return;
   }
 
+  const appTitle = `Sunjin ERP ${app.getVersion()}`;
   mainWindow = new BrowserWindow({
+    title: appTitle,
     width: 1420,
     height: 940,
     minWidth: 1200,
@@ -633,6 +878,10 @@ function createMainWindow() {
     Menu.setApplicationMenu(null);
     mainWindow.removeMenu();
   }
+
+  mainWindow.on("close", () => {
+    isQuitting = true;
+  });
 
   mainWindow.loadFile(path.join(__dirname, "renderer/index.html"));
 }
@@ -694,7 +943,7 @@ async function runStartupUpdateFlow() {
   }
 }
 
-ipcMain.handle("preference:get", () => readPreferences());
+ipcMain.handle("preference:get", () => readPreferencesWithServerSync());
 ipcMain.handle("app:version", async () => {
   const serverUrl = await resolveServerUrl();
   return {
@@ -705,8 +954,8 @@ ipcMain.handle("app:version", async () => {
     serverKind: resolvedServerKind,
   };
 });
-ipcMain.handle("preference:save", (_event, payload) => {
-  const nextPreferences = writePreferences(payload);
+ipcMain.handle("preference:save", async (_event, payload) => {
+  const nextPreferences = await writePreferencesWithServerSync(payload);
   persistCurrentSessionIfAllowed(nextPreferences.accessScope);
   return nextPreferences;
 });
@@ -721,65 +970,39 @@ ipcMain.handle("auth:login", async (_event, payload) =>
     const result = await apiRequest("POST", "/api/v1/auth/login", requestBody, {
       testAccessScope,
     });
-    runtimeAccessScope = result?.data?.access_scope || runtimeAccessScope;
-    const nextSessionId = result?.data?.pending_session_id || result?.data?.session_id;
-    if (nextSessionId) {
-      sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
-      pendingSessionId =
-        result?.data?.login_status === "AUTHENTICATED" ? "" : String(result.data.pending_session_id || "");
-      if (result?.data?.login_status === "AUTHENTICATED" && runtimeAccessScope === "INTERNAL") {
-        persistCurrentSessionIfAllowed(runtimeAccessScope);
-      }
+    runtimeAccessScope = result?.data?.session_context?.access_scope || result?.data?.access_scope || runtimeAccessScope;
+    if (result?.data?.login_status === "AUTHENTICATED") {
+      persistCurrentSessionIfAllowed(runtimeAccessScope);
     }
     return result;
   },
 );
+ipcMain.handle("auth:change-password", async (_event, payload) =>
+  apiRequest("POST", "/api/v1/me/password", payload),
+);
 ipcMain.handle("auth:verify-mfa", async (_event, payload) => {
-  const result = await apiRequest("POST", "/api/v1/auth/mfa/verify", payload, {
-    pendingSessionId,
-  });
+  const result = await apiRequest("POST", "/api/v1/auth/mfa/verify", payload);
   runtimeAccessScope = result?.data?.session_context?.access_scope || runtimeAccessScope;
-  const nextSessionId = result?.data?.session_id;
-  if (nextSessionId) {
-    sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
-    pendingSessionId = "";
-    if (runtimeAccessScope === "INTERNAL") {
-      persistCurrentSessionIfAllowed(runtimeAccessScope);
-    }
-  }
+  persistCurrentSessionIfAllowed(runtimeAccessScope);
   return result;
 });
 ipcMain.handle("auth:mfa-enrollment:start", async () =>
-  apiRequest("POST", "/api/v1/auth/mfa/enrollment/start", undefined, {
-    pendingSessionId,
-  }),
+  apiRequest("POST", "/api/v1/auth/mfa/enrollment/start"),
 );
 ipcMain.handle("auth:mfa-enrollment:status", async () =>
-  apiRequest("GET", "/api/v1/auth/mfa/enrollment/status", undefined, {
-    pendingSessionId,
-  }),
+  apiRequest("GET", "/api/v1/auth/mfa/enrollment/status"),
 );
 ipcMain.handle("auth:mfa-enrollment:verify", async (_event, payload) =>
   {
-    const result = await apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload, {
-      pendingSessionId,
-    });
+    const result = await apiRequest("POST", "/api/v1/auth/mfa/enrollment/verify", payload);
     runtimeAccessScope = result?.data?.session_context?.access_scope || runtimeAccessScope;
-    const nextSessionId = result?.data?.session_id;
-    if (nextSessionId) {
-      sessionCookie = `erp_demo_session=${encodeURIComponent(nextSessionId)}`;
-      pendingSessionId = "";
-      if (runtimeAccessScope === "INTERNAL") {
-        persistCurrentSessionIfAllowed(runtimeAccessScope);
-      }
-    }
+    persistCurrentSessionIfAllowed(runtimeAccessScope);
     return result;
   },
 );
 ipcMain.handle("auth:logout", async () => {
   const result = await apiRequest("POST", "/api/v1/auth/logout");
-  sessionCookie = "";
-  pendingSessionId = "";
+  sessionCookieJar.clear();
   clearPersistedSession();
   return result;
 });
@@ -789,8 +1012,17 @@ ipcMain.handle("customers:list", async (_event, search) =>
 );
 ipcMain.handle("customers:get", async (_event, customerId) => apiRequest("GET", `/api/v1/customers/${customerId}`));
 ipcMain.handle("customers:create", async (_event, payload) => apiRequest("POST", "/api/v1/customers", payload));
+ipcMain.handle("customers:update", async (_event, customerId, payload) =>
+  apiRequest("PATCH", `/api/v1/customers/${customerId}`, payload),
+);
+ipcMain.handle("customers:update-memo", async (_event, customerId, payload) =>
+  apiRequest("PATCH", `/api/v1/customers/${customerId}/memo`, payload),
+);
 ipcMain.handle("customers:add-contact", async (_event, customerId, payload) =>
   apiRequest("POST", `/api/v1/customers/${customerId}/contacts`, payload),
+);
+ipcMain.handle("customers:update-contact", async (_event, contactId, payload) =>
+  apiRequest("PATCH", `/api/v1/contacts/${contactId}`, payload),
 );
 ipcMain.handle("customers:add-address", async (_event, customerId, payload) =>
   apiRequest("POST", `/api/v1/customers/${customerId}/addresses`, payload),
@@ -798,8 +1030,22 @@ ipcMain.handle("customers:add-address", async (_event, customerId, payload) =>
 ipcMain.handle("customers:add-asset", async (_event, customerId, payload) =>
   apiRequest("POST", `/api/v1/customers/${customerId}/assets`, payload),
 );
+ipcMain.handle("customers:update-asset", async (_event, assetId, payload) =>
+  apiRequest("PATCH", `/api/v1/assets/${assetId}`, payload),
+);
+ipcMain.handle("customers:delete-asset", async (_event, assetId) => apiRequest("DELETE", `/api/v1/assets/${assetId}`));
 ipcMain.handle("customers:add-equipment", async (_event, assetId, payload) =>
   apiRequest("POST", `/api/v1/assets/${assetId}/equipments`, payload),
+);
+ipcMain.handle("customers:update-equipment", async (_event, equipmentId, payload) =>
+  apiRequest("PATCH", `/api/v1/equipments/${equipmentId}`, payload),
+);
+ipcMain.handle("customers:delete-equipment", async (_event, equipmentId) => apiRequest("DELETE", `/api/v1/equipments/${equipmentId}`));
+ipcMain.handle("master-data-requests:create", async (_event, payload) =>
+  apiRequest("POST", "/api/v1/master-data-requests", payload),
+);
+ipcMain.handle("customers:list-equipment-options", async (_event, optionType) =>
+  apiRequest("GET", `/api/v1/master/equipment-options${optionType ? `?option_type=${encodeURIComponent(optionType)}` : ""}`),
 );
 ipcMain.handle("customers:list-engine-models", async (_event, search) =>
   apiRequest("GET", `/api/v1/master/engine-models${search ? `?search=${encodeURIComponent(search)}` : ""}`),
@@ -814,12 +1060,86 @@ ipcMain.handle("customers:create-gearbox-model", async (_event, payload) =>
   apiRequest("POST", "/api/v1/master/gearbox-models", payload),
 );
 ipcMain.handle("customers:upload-file", async (_event, payload) => apiRequest("POST", "/api/v1/files", payload));
+ipcMain.handle("customers:select-business-license-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "사업자등록증 파일 선택",
+    properties: ["openFile"],
+    filters: [
+      { name: "PDF 또는 이미지", extensions: ["pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff"] },
+      { name: "모든 파일", extensions: ["*"] },
+    ],
+  });
+
+  if (result.canceled || !result.filePaths[0]) {
+    return { canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+  const buffer = fs.readFileSync(filePath);
+  const textContent = extractTextFromDocument(filePath, buffer);
+  return {
+    canceled: false,
+    file: {
+      path: filePath,
+      originalName: path.basename(filePath),
+      mimeType: inferMimeType(filePath),
+      sizeBytes: buffer.byteLength,
+      sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+      ocrSourceText: textContent,
+      extracted: extractBusinessLicenseFields(textContent),
+    },
+  };
+});
 ipcMain.handle("customers:link-file", async (_event, fileId, payload) =>
   apiRequest("POST", `/api/v1/files/${fileId}/links`, payload),
 );
 ipcMain.handle("customers:extract-business-license", async (_event, customerId, payload) =>
   apiRequest("POST", `/api/v1/customers/${customerId}/business-license/extract`, payload),
 );
+ipcMain.handle("orders:list", async () => apiRequest("GET", "/api/v1/orders"));
+ipcMain.handle("orders:save", async (_event, orderId, payload) =>
+  apiRequest("PUT", `/api/v1/orders/${encodeURIComponent(orderId)}`, payload),
+);
+ipcMain.handle("orders:delete", async (_event, orderId) => apiRequest("DELETE", `/api/v1/orders/${encodeURIComponent(orderId)}`));
+ipcMain.handle("orders:merge", async (_event, payload) => apiRequest("POST", "/api/v1/orders/merge", payload));
+ipcMain.handle("projects:list", async () => apiRequest("GET", "/api/v1/projects"));
+ipcMain.handle("assets:workspace", async () => apiRequest("GET", "/api/v1/assets/workspace"));
+ipcMain.handle("assets:physical:save", async (_event, assetId, payload) =>
+  apiRequest(assetId ? "PUT" : "POST", assetId ? `/api/v1/assets/physical/${encodeURIComponent(assetId)}` : "/api/v1/assets/physical", payload),
+);
+ipcMain.handle("assets:physical:delete", async (_event, assetId) => apiRequest("DELETE", `/api/v1/assets/physical/${encodeURIComponent(assetId)}`));
+ipcMain.handle("assets:knowledge:save", async (_event, recordId, payload) =>
+  apiRequest(recordId ? "PUT" : "POST", recordId ? `/api/v1/assets/knowledge/${encodeURIComponent(recordId)}` : "/api/v1/assets/knowledge", payload),
+);
+ipcMain.handle("assets:knowledge:delete", async (_event, recordId) => apiRequest("DELETE", `/api/v1/assets/knowledge/${encodeURIComponent(recordId)}`));
+ipcMain.handle("documents:select-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "첨부 파일 선택",
+    properties: ["openFile"],
+    filters: [
+      { name: "문서 파일", extensions: ["pdf", "png", "jpg", "jpeg", "webp", "doc", "docx", "xls", "xlsx", "txt"] },
+      { name: "모든 파일", extensions: ["*"] },
+    ],
+  });
+
+  if (result.canceled || !result.filePaths[0]) {
+    return { canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+  const buffer = fs.readFileSync(filePath);
+  return {
+    canceled: false,
+    file: {
+      path: filePath,
+      originalName: path.basename(filePath),
+      mimeType: inferMimeType(filePath),
+      sizeBytes: buffer.byteLength,
+      sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+      contentBase64: buffer.toString("base64"),
+    },
+  };
+});
 ipcMain.handle("updates:check", async () => checkForUpdates());
 ipcMain.handle("updates:open-download", async (_event, url) => {
   if (!url) {
@@ -829,10 +1149,62 @@ ipcMain.handle("updates:open-download", async (_event, url) => {
   await shell.openExternal(String(url));
   return true;
 });
+ipcMain.handle("documents:open", async (_event, target) => {
+  const documentTarget = String(target || "").trim();
+  if (!documentTarget) {
+    return false;
+  }
+
+  if (/^https?:\/\//i.test(documentTarget)) {
+    await shell.openExternal(documentTarget);
+    return true;
+  }
+
+  const result = await shell.openPath(documentTarget);
+  if (result) {
+    throw new Error(result);
+  }
+  return true;
+});
+ipcMain.handle("print:html", async (_event, payload) => {
+  const html = String(payload?.html || "");
+  if (!html) {
+    throw new Error("인쇄할 내용이 없습니다.");
+  }
+
+  const printWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+    },
+  });
+
+  try {
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    await new Promise((resolve, reject) => {
+      printWindow.webContents.print(
+        {
+          silent: false,
+          printBackground: true,
+        },
+        (success, failureReason) => {
+          if (success) {
+            resolve(true);
+            return;
+          }
+          reject(new Error(failureReason || "인쇄 실패"));
+        },
+      );
+    });
+    return true;
+  } finally {
+    printWindow.close();
+  }
+});
 
 app.whenReady().then(() => {
-  sessionCookie = readPersistedSession();
-  pendingSessionId = "";
+  readPersistedSession();
   registerAutoUpdater();
   createSplashWindow();
   runStartupUpdateFlow();
@@ -845,8 +1217,17 @@ app.whenReady().then(() => {
   });
 });
 
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
+  if (process.platform === "darwin") {
+    if (!isQuitting) {
+      app.quit();
+      return;
+    }
   }
+
+  app.quit();
 });

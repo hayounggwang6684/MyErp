@@ -34,6 +34,7 @@
 - `GET /api/v1/orders`
 - `POST /api/v1/orders`
 - `GET /api/v1/orders/{orderId}`
+- `PATCH /api/v1/orders/{orderId}`
 - `POST /api/v1/orders/{orderId}/confirm`
 - `POST /api/v1/orders/{orderId}/cancel`
 
@@ -58,6 +59,8 @@
 - `GET /api/v1/invoices/{invoiceId}`
 - `POST /api/v1/invoices/{invoiceId}/issue`
 - `POST /api/v1/invoices/{invoiceId}/record-payment`
+- `POST /api/v1/invoices/{invoiceId}/documents`
+- `PATCH /api/v1/invoices/{invoiceId}/memo`
 
 ## 3. 핵심 규칙
 
@@ -66,6 +69,17 @@
 - 가격 예외, 할인 예외, 승인 확정은 승인 권한과 감사 로그가 필요하다.
 - 출하 전 재고 검증을 다시 수행한다.
 - 청구 라인은 원거래 변경과 독립적으로 보존한다.
+- 청구 원거래는 `sourceType`, `sourceId`, `sourceNo`로 저장한다. `sourceType`은 `PROJECT`, `SALE`, `DELIVERY`를 사용한다.
+- 수금 내역은 부분 수금을 허용하며 수금 합계가 청구 합계 이상이면 수금 완료로 계산한다.
+- 예정일이 지났고 미수금이 있으면 연체 상태로 계산한다.
+- 청구 문서 ID는 `청구번호-문서종류코드-순번` 형식으로 자동 생성한다.
+- 주문 등록 화면은 기간 조회를 기본 검색 조건으로 사용한다.
+- 주문 목록 기본 컬럼은 주문일, 거래처, 선박, 구분, 수주, 주문명, 상태, 주문ID, 공사ID를 기준으로 한다.
+- 주문 상세는 주문 내역과 공사 정보를 분리 표시한다.
+- 수주 확정 시 관리번호는 `SH-YYYY-NNN-T` 또는 `SH-YYYY-NNN-S` 형식으로 발급한다. `T`는 공사, `S`는 일반 판매 또는 납품이다.
+- 관리번호는 결번 유지 정책을 따른다. 삭제, 취소, 병합으로 비는 순번이 생겨도 재정렬하지 않고, 신규는 항상 해당 연도 최대 순번 + 1 로 발급한다.
+- 중복 관리번호가 발견되면 첫 정상 건은 유지하고 뒤 충돌 건만 새 번호를 재발급한다. 순번 압축은 하지 않는다.
+- `YYYY`는 수주 확정 체크일 기준 연도이며, `NNN`은 해당 연도 누적 순번이다.
 
 ## 4. 주문 생성 예시
 
@@ -73,6 +87,10 @@
 {
   "customer_id": "cust_100",
   "quotation_id": "quo_200",
+  "request_type": "견적 요청",
+  "quote_scope": ["PARTS", "REPAIR"],
+  "vessel_id": "asset_100",
+  "equipment_id": "eq_100",
   "lines": [
     {
       "item_id": "item_100",
@@ -83,6 +101,8 @@
   "requested_delivery_date": "2026-03-20"
 }
 ```
+
+견적 없이 바로 진행하는 주문은 `quote_scope`를 빈 배열로 두고 수주 확정 단계에서 공사 또는 일반 판매 구분을 지정한다.
 
 ## 5. 출하 등록 예시
 

@@ -7,23 +7,14 @@ import { sendJson } from "../../shared/utils/responses.js";
 import { sessionService } from "../sessions/index.js";
 import { userService } from "../users/index.js";
 import { auditService } from "../audit/index.js";
-
-function getClientIp(request: Request) {
-  const forwarded = request.header("x-forwarded-for");
-  if (forwarded) {
-    return String(forwarded.split(",")[0] || "").replace(/^::ffff:/, "").trim();
-  }
-
-  return String(request.ip || request.socket.remoteAddress || "").replace(/^::ffff:/, "").trim();
-}
-
-function isLocalAdminRequest(request: Request) {
-  const clientIp = getClientIp(request);
-  return clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "localhost";
-}
+import { getRequestIp, isLocalRequest } from "../../shared/utils/request-security.js";
+import {
+  approveMasterDataRequest as approveStoredMasterDataRequest,
+  listMasterDataRequests,
+} from "./master-data-request.store.js";
 
 async function requireAdminSession(request: Request) {
-  if (!isLocalAdminRequest(request)) {
+  if (!isLocalRequest(request)) {
     return null;
   }
 
@@ -168,6 +159,50 @@ export class AdminSecurityController {
     });
   };
 
+  listMasterDataRequests = async (request: Request, response: Response) => {
+    const session = await requireAdminSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "ADMIN_REQUIRED",
+        message: "관리자 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      success: true,
+      data: listMasterDataRequests(),
+    });
+  };
+
+  approveMasterDataRequest = async (request: Request, response: Response) => {
+    const session = await requireAdminSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "ADMIN_REQUIRED",
+        message: "관리자 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    const data = approveStoredMasterDataRequest(String(request.params.requestId || ""), session.user.id);
+    if (!data) {
+      sendJson(response, 404, {
+        success: false,
+        errorCode: "REQUEST_NOT_FOUND",
+        message: "요청을 찾을 수 없습니다.",
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      success: true,
+      data,
+    });
+  };
+
   unlockUser = async (request: Request, response: Response) => {
     const adminSession = await requireAdminSession(request);
     if (!adminSession) {
@@ -197,7 +232,7 @@ export class AdminSecurityController {
         eventType: "ADMIN_ACCOUNT_UNLOCKED",
         accessScope: adminSession.context.accessScope,
         deviceId: adminSession.context.deviceId,
-        clientIp: getClientIp(request),
+        clientIp: getRequestIp(request),
         certificateFingerprint: adminSession.context.certificateFingerprint,
         success: true,
         reasonCode: `ADMIN:${adminSession.user.username}`,
@@ -239,7 +274,7 @@ export class AdminSecurityController {
         eventType: "ADMIN_MFA_RESET",
         accessScope: adminSession.context.accessScope,
         deviceId: adminSession.context.deviceId,
-        clientIp: getClientIp(request),
+        clientIp: getRequestIp(request),
         certificateFingerprint: adminSession.context.certificateFingerprint,
         success: true,
         reasonCode: `ADMIN:${adminSession.user.username}`,
@@ -283,7 +318,7 @@ export class AdminSecurityController {
         eventType: "ADMIN_EMPLOYEE_UPDATED",
         accessScope: adminSession.context.accessScope,
         deviceId: adminSession.context.deviceId,
-        clientIp: getClientIp(request),
+        clientIp: getRequestIp(request),
         certificateFingerprint: adminSession.context.certificateFingerprint,
         success: true,
         reasonCode: `ADMIN:${adminSession.user.username};EMPLOYEE:${employeeId}`,
@@ -327,7 +362,7 @@ export class AdminSecurityController {
         eventType: "ADMIN_USER_STATUS_UPDATED",
         accessScope: adminSession.context.accessScope,
         deviceId: adminSession.context.deviceId,
-        clientIp: getClientIp(request),
+        clientIp: getRequestIp(request),
         certificateFingerprint: adminSession.context.certificateFingerprint,
         success: true,
         reasonCode: `ADMIN:${adminSession.user.username};STATUS:${nextStatus}`,
@@ -379,7 +414,7 @@ export class AdminSecurityController {
         eventType: "ADMIN_ROLES_UPDATED",
         accessScope: adminSession.context.accessScope,
         deviceId: adminSession.context.deviceId,
-        clientIp: getClientIp(request),
+        clientIp: getRequestIp(request),
         certificateFingerprint: adminSession.context.certificateFingerprint,
         success: true,
         reasonCode: `ADMIN:${adminSession.user.username};ROLES:${sanitizedRoles.join(",") || "NONE"}`,
