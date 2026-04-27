@@ -1,10 +1,10 @@
-# Multi-Agent Coordination
+# Orchestra Worktree Coordination
 
-Multi-Agent is a lightweight local coordination layer for running several Codex terminal windows against one project.
+Orchestra is a lightweight local coordination layer for running several Codex terminal windows against one project.
 
 It provides:
 
-- shared local state under `.multi-agent/`
+- shared local state under `.orchestra/`
 - agent registration and status
 - file claim locks to reduce edit conflicts
 - conductor orders and done submissions
@@ -18,8 +18,10 @@ Copy these files into the target project:
 
 ```text
 scripts/orchestra.js
-scripts/multi-agent.js
-skills/multi-agent-conductor/SKILL.md
+skills/orchestra-conductor/SKILL.md
+skills/orchestra-order-check/SKILL.md
+skills/orchestra-packaging/SKILL.md
+skills/orchestra-test/SKILL.md
 docs/multi-agent.md
 ```
 
@@ -28,7 +30,7 @@ Then add this script to the target project's `package.json`:
 ```json
 {
   "scripts": {
-    "multi-agent": "node scripts/multi-agent.js"
+    "orchestra": "node scripts/orchestra.js"
   }
 }
 ```
@@ -36,8 +38,8 @@ Then add this script to the target project's `package.json`:
 Add these entries to `.gitignore`:
 
 ```text
-.multi-agent
-.multi-agent/
+.orchestra
+.orchestra/
 ```
 
 ## Basic Setup
@@ -45,59 +47,54 @@ Add these entries to `.gitignore`:
 Initialize the default agents:
 
 ```bash
-npm run multi-agent -- init
+npm run orchestra -- init
 ```
 
 Default agents:
 
-- `terminal-a`: worker
-- `terminal-b`: worker
-- `terminal-c`: worker
-- `terminal-d`: conductor
-
-You can rename their display names in the dashboard or register extra agents:
-
-```bash
-npm run multi-agent -- register terminal-e customers
-```
+- `terminal-a`: orders
+- `terminal-b`: projects
+- `terminal-c`: assets
+- `terminal-d`: conductor, verification, packaging
+- `terminal-e`: customers
 
 ## Core Commands
 
 Check state:
 
 ```bash
-npm run multi-agent -- status
+npm run orchestra -- status
 ```
 
 Open dashboard:
 
 ```bash
-npm run multi-agent -- dashboard 4177
+npm run orchestra -- dashboard 4177
 ```
 
 Send an order:
 
 ```bash
-npm run multi-agent -- order terminal-a "Update the order tab. Claim files before editing."
+npm run orchestra -- order terminal-a "Update the order tab. Claim files before editing."
 ```
 
 Check and acknowledge orders:
 
 ```bash
-npm run multi-agent -- orders terminal-a
-npm run multi-agent -- ack terminal-a
+npm run orchestra -- orders terminal-a
+npm run orchestra -- ack terminal-a
 ```
 
 Claim files:
 
 ```bash
-npm run multi-agent -- claim terminal-a "src/modules/orders/**" "client/renderer/app-order*.js"
+npm run orchestra -- claim terminal-a "src/modules/orders/**" "client/renderer/app-order*.js"
 ```
 
 Finish work:
 
 ```bash
-npm run multi-agent -- done terminal-a "Order tab update complete, build passed"
+npm run orchestra -- done terminal-a "Order tab update complete, build passed"
 ```
 
 When a worker runs `done`, the conductor receives an automatic review order.
@@ -105,7 +102,7 @@ When a worker runs `done`, the conductor receives an automatic review order.
 Run commands with event logging:
 
 ```bash
-npm run multi-agent -- run terminal-d -- npm run build
+npm run orchestra -- run terminal-d -- npm run build
 ```
 
 ## Recommended Worktree Structure
@@ -113,10 +110,11 @@ npm run multi-agent -- run terminal-d -- npm run build
 Keep the main project folder for the conductor and integration. Create separate worktrees for workers:
 
 ```bash
-mkdir -p ../project-worktrees
-git worktree add -b multi-agent/terminal-a ../project-worktrees/terminal-a origin/master
-git worktree add -b multi-agent/terminal-b ../project-worktrees/terminal-b origin/master
-git worktree add -b multi-agent/terminal-c ../project-worktrees/terminal-c origin/master
+mkdir -p "/Users/glory_ai_sever/Desktop/erp-worktrees"
+git worktree add -b orchestra/terminal-a "/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-a" origin/master
+git worktree add -b orchestra/terminal-b "/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-b" origin/master
+git worktree add -b orchestra/terminal-c "/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-c" origin/master
+git worktree add -b orchestra/terminal-e "/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-e" origin/master
 ```
 
 Install dependencies in each worktree:
@@ -126,10 +124,10 @@ npm install
 npm run build
 ```
 
-To share one dashboard state across worktrees, link the conductor state folder:
+Each worktree should use the shared `.orchestra` state from the main project. If the folder is not shared, link it:
 
 ```bash
-ln -s "/absolute/path/to/main-project/.multi-agent" "/absolute/path/to/worktree/.multi-agent"
+ln -s "/Users/glory_ai_sever/Desktop/erp porject/.orchestra" "/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-a/.orchestra"
 ```
 
 ## Conductor Routine
@@ -137,19 +135,19 @@ ln -s "/absolute/path/to/main-project/.multi-agent" "/absolute/path/to/worktree/
 The conductor should regularly run:
 
 ```bash
-npm run multi-agent -- orders terminal-d
-npm run multi-agent -- ack terminal-d
-npm run multi-agent -- status
-npm run multi-agent -- events 50
+npm run orchestra -- orders terminal-d
+npm run orchestra -- ack terminal-d
+npm run orchestra -- status
+npm run orchestra -- events 50
 git status --short
 git worktree list
-npm run multi-agent -- run terminal-d -- npm run build
+npm run orchestra -- run terminal-d -- npm run build
 ```
 
 If a worker touched the wrong area or a claim conflict appears, send a targeted order:
 
 ```bash
-npm run multi-agent -- order terminal-b "Conflict detected with terminal-a. Release or narrow your claim before continuing."
+npm run orchestra -- order terminal-b "Conflict detected with terminal-a. Release or narrow your claim before continuing."
 ```
 
 ## Korean Short Prompts

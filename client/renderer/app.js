@@ -206,6 +206,8 @@ let assetState = {
   knowledgeRecords: [],
 };
 let assetColumnResizeState = null;
+let assetSearchComposing = false;
+let assetSearchRenderTimer = null;
 let inventoryPaneResizeState = null;
 let inventoryState = {
   viewMode: "stock",
@@ -387,6 +389,11 @@ let customerState = {
   },
   notice: "고객, 담당자, 선박/장비, 엔진/감속기 마스터를 한 화면에서 관리합니다.",
 };
+const customerSearchCache = new Map();
+
+function invalidateCustomerSearchCache() {
+  customerSearchCache.clear();
+}
 
 function setMessage(element, kind, message) {
   element.className = `message ${kind}`;
@@ -533,6 +540,44 @@ function renderTable(columns, rows) {
 
 function formatWon(value) {
   return `${Number(value || 0).toLocaleString("ko-KR")}원`;
+}
+
+const assetCurrencyOptions = ["KRW", "USD", "EUR", "JPY", "CNY"];
+
+function normalizeAssetCurrency(value) {
+  const candidate = String(value || "KRW").trim().toUpperCase();
+  return assetCurrencyOptions.includes(candidate) ? candidate : "KRW";
+}
+
+function assetCurrencySelectOptions(selected = "KRW") {
+  const current = normalizeAssetCurrency(selected);
+  return assetCurrencyOptions
+    .map((currency) => `<option value="${currency}"${current === currency ? " selected" : ""}>${currency}</option>`)
+    .join("");
+}
+
+function accountingAmountValue(value) {
+  const normalized = String(value || "").replace(/,/g, "").replace(/[₩$€¥원]/g, "").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? String(parsed) : "";
+}
+
+function formatAssetAccountingAmount(value, currency = "KRW") {
+  const normalized = String(value || "").replace(/,/g, "").replace(/[₩$€¥원]/g, "").trim();
+  if (!normalized) {
+    return "";
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return normalized;
+  }
+  const code = normalizeAssetCurrency(currency);
+  return new Intl.NumberFormat("ko-KR", {
+    style: "currency",
+    currency: code,
+    currencyDisplay: "symbol",
+    maximumFractionDigits: code === "KRW" || code === "JPY" ? 0 : 2,
+  }).format(parsed);
 }
 
 function getAssetPhysicalColumnWidths() {
@@ -1581,7 +1626,7 @@ function renderCustomerWorkspace() {
         return `
         <button type="button" class="customer-list-row${customer.id === customerState.selectedCustomerId ? " active" : ""}${isMultiSelected ? " multi-selected" : ""}" data-customer-select="${customer.id}" aria-pressed="${isMultiSelected ? "true" : "false"}">
           <span class="customer-row-company">${customer.customerName}</span>
-          <span class="customer-row-owner">${customer.primaryContactName || customer.representativeName || "-"}</span>
+          <span class="customer-row-owner">${customer.matchHint || customer.primaryContactName || customer.representativeName || "-"}</span>
         </button>
       `;
       },
@@ -1595,6 +1640,7 @@ function renderCustomerWorkspace() {
   const equipmentTypeOptions = equipmentTypeOptionsFor(selected);
   const manufacturerOptions = equipmentManufacturerOptionsFor(selected);
   const equipmentUnitOptions = equipmentUnitOptionsFor(selected);
+  const allModelOptions = equipmentModelOptionsFor(selected);
 
   const customerClassicFields = isCreateMode
     ? `
@@ -1711,7 +1757,74 @@ function renderCustomerWorkspace() {
           )
           .join("")
       : `<div class="empty-inline">선택 선박에 등록된 장비가 없습니다.</div>`
-    : `<div class="empty-inline">왼쪽 선박을 선택하면 장비 목록이 표시됩니다.</div>`;
+	      : `<div class="empty-inline">왼쪽 선박을 선택하면 장비 목록이 표시됩니다.</div>`;
+
+  const equipmentHistoryMarkup = selected?.equipmentHistory?.length
+    ? `
+      <div class="customer-master-usage-list">
+        ${selected.equipmentHistory
+          .slice(0, 8)
+          .map((history) => {
+            const beforeName = history.beforeSnapshot?.equipment_name || "";
+            const afterName = history.afterSnapshot?.equipment_name || "";
+            const displayName = afterName || beforeName || history.equipmentId;
+            const isDeleted = history.action === "DELETE";
+            return `
+              <div class="customer-master-usage-row">
+                <span>${escapeTextarea(history.action)}</span>
+                <span>${escapeTextarea(String(displayName))}</span>
+                <span>${escapeTextarea(history.createdByName || "-")}</span>
+                <span>${formatDate(history.createdAt)}</span>
+                <span>${isDeleted ? `<button type="button" class="ghost-button compact" data-customer-equipment-restore="${escapeAttribute(history.equipmentId)}">복구</button>` : ""}</span>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `
+    : '<div class="empty-inline">장비 변경 이력이 없습니다.</div>';
+
+  const mergeHistoryMarkup = selected?.mergeHistory?.length
+    ? `
+      <div class="customer-master-usage-list">
+        ${selected.mergeHistory
+          .slice(0, 5)
+          .map(
+            (history) => `
+              <div class="customer-master-usage-row">
+                <span>${escapeTextarea(history.mergedCustomerName || history.mergedCustomerId)}</span>
+                <span>${escapeTextarea(history.createdByName || "-")}</span>
+                <span>${formatDate(history.createdAt)}</span>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    `
+    : '<div class="empty-inline">병합 이력이 없습니다.</div>';
+  const equipmentMasterManageMarkup = selected
+    ? `
+      <div class="customer-master-usage-list">
+        ${[
+          ...manufacturerOptions.map((value) => ({ fieldName: "manufacturer", value })),
+          ...allModelOptions.map((value) => ({ fieldName: "model_name", value })),
+        ]
+          .filter((item) => item.value)
+          .slice(0, 24)
+          .map(
+            (item) => `
+              <div class="customer-master-usage-row">
+                <span>${escapeTextarea(customerMasterFieldLabel(item.fieldName))}</span>
+                <span>${escapeTextarea(item.value)}</span>
+                <span></span>
+                <span><button type="button" class="ghost-button compact" data-customer-master-manage-delete="${escapeAttribute(item.fieldName)}" data-customer-master-manage-value="${escapeAttribute(item.value)}">비활성/병합</button></span>
+              </div>
+            `,
+          )
+          .join("") || '<div class="empty-inline">관리할 제조사/모델명이 없습니다.</div>'}
+      </div>
+    `
+    : '<div class="empty-inline">고객 선택 후 마스터를 관리할 수 있습니다.</div>';
 
   const assetFormTarget = assetEditorMode === "edit" ? selectedAsset : null;
   const assetEditorMarkup = selected
@@ -1743,10 +1856,15 @@ function renderCustomerWorkspace() {
       <form id="customer-equipment-form" class="customer-equipment-editor">
         <input type="hidden" name="asset_id" value="${escapeAttribute(selectedAsset.id)}" />
         <input type="hidden" name="equipment_id" value="${escapeAttribute(equipmentFormTarget?.id || "")}" />
-        <div class="customer-equipment-editor-head">
-          <strong>${equipmentEditorMode === "create" ? "장비 신규 추가" : "장비 정보 변경"}</strong>
-          <button type="button" class="customer-add-row compact" data-customer-equipment-new>${equipmentEditorMode === "create" ? "신규 입력 중" : "+ 장비 신규"}</button>
-        </div>
+	        <div class="customer-equipment-editor-head">
+	          <strong>${equipmentEditorMode === "create" ? "장비 신규 추가" : "장비 정보 변경"}</strong>
+	          ${
+              equipmentFormTarget
+                ? `<span class="table-subtext">등록 ${escapeTextarea(equipmentFormTarget.createdByName || "-")} / 수정 ${escapeTextarea(equipmentFormTarget.updatedByName || "-")}</span>`
+                : ""
+            }
+	          <button type="button" class="customer-add-row compact" data-customer-equipment-new>${equipmentEditorMode === "create" ? "신규 입력 중" : "+ 장비 신규"}</button>
+	        </div>
         <div class="customer-equipment-editor-fields">
           <select class="text-field" name="equipment_type" data-master-field="equipment_type" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentType || "MAIN_ENGINE")}">
             ${equipmentTypeOptions
@@ -1817,13 +1935,25 @@ function renderCustomerWorkspace() {
             ${customerSortButtonMarkup("equipment", "serial_no", "SN")}
             ${customerSortButtonMarkup("equipment", "notes", "REMARK")}
           </div>
-          <div class="customer-equipment-list">
-            ${equipmentRowsMarkup}
-          </div>
-          ${equipmentEditorMarkup}
-        </article>
-      </section>
-    `
+	          <div class="customer-equipment-list">
+	            ${equipmentRowsMarkup}
+	          </div>
+	          ${equipmentEditorMarkup}
+	          <article class="customer-section-card">
+	            <h4 class="section-mini-title">장비 변경 이력</h4>
+	            ${equipmentHistoryMarkup}
+	          </article>
+	        </article>
+	      </section>
+	      <article class="customer-section-card">
+	        <h4 class="section-mini-title">업체 병합 이력</h4>
+	        ${mergeHistoryMarkup}
+	      </article>
+	      <article class="customer-section-card">
+	        <h4 class="section-mini-title">제조사/모델명 마스터 관리</h4>
+	        ${equipmentMasterManageMarkup}
+	      </article>
+	    `
     : `<div class="empty-inline">고객을 선택하면 선박/장비 목록이 표시됩니다.</div>`;
 
   const employeeRowsMarkup =
@@ -2011,7 +2141,12 @@ async function refreshCustomerWorkspace(options = {}) {
   renderCustomerWorkspace();
 
   try {
-    const customersResult = await window.erpClient.listCustomers(customerState.search);
+    const searchCacheKey = String(customerState.search || "").trim().toLowerCase();
+    let customersResult = customerSearchCache.get(searchCacheKey);
+    if (!customersResult || options.force) {
+      customersResult = await window.erpClient.listCustomers(customerState.search);
+      customerSearchCache.set(searchCacheKey, customersResult);
+    }
 
     customerState.list = customersResult.data || [];
     customerState.multiSelectedCustomerIds = [];
@@ -2322,6 +2457,8 @@ function renderAssetWorkspace() {
   const allPhysicalAssets = assetState.physicalAssets;
   const physicalAssets = filteredPhysicalAssets();
   const physicalFilters = assetState.physicalFilters || {};
+  const physicalChips = physicalFilterChips(physicalFilters);
+  const knowledgeChips = knowledgeFilterChips();
   const physicalColumnWidths = getAssetPhysicalColumnWidths();
   const physicalColumns = assetPhysicalColumnDefinitions();
   const knowledgeRecords = filteredKnowledgeRecords();
@@ -2353,8 +2490,8 @@ function renderAssetWorkspace() {
       <td>${asset.name}</td>
       <td>${asset.purchasePrice || "-"}</td>
       <td>${asset.auditCycle || "-"}</td>
-      <td><span class="status-badge ${asset.state}">${formatLatestAuditEntry(asset)}</span></td>
-      <td>${formatLatestRepairEntry(asset)}</td>
+      <td><span class="status-badge ${asset.state}">${formatLatestAuditEntry(asset)}</span><p class="detail">${formatAssetNextInspectionDue(asset)}</p></td>
+      <td>${formatLatestRepairEntry(asset)}<p class="detail">누적 ${formatAssetCostTotals(asset)}</p></td>
     </tr>
   `).join("");
 
@@ -2439,6 +2576,7 @@ function renderAssetWorkspace() {
           <span>검색</span>
           <input type="search" class="text-field" data-asset-physical-filter="query" value="${escapeAttribute(physicalFilters.query || "")}" placeholder="등록번호, 이름, 가격, 주기, 검사, 수리 검색" />
         </label>
+        ${physicalChips}
         <div class="asset-table-wrap">
         <table class="data-table asset-table asset-physical-table">
           <colgroup>
@@ -2482,6 +2620,7 @@ function renderAssetWorkspace() {
           <span>검색</span>
           <input type="search" class="text-field" data-asset-knowledge-search value="${escapeAttribute(assetState.knowledgeSearch || "")}" placeholder="내용, 카테고리, 작성자, #해시태그 검색" />
         </label>
+        ${knowledgeChips}
         <div class="asset-knowledge-stack">
           ${knowledgeBlocks || '<article class="asset-knowledge-section"><p class="detail">등록된 지식이 없습니다.</p></article>'}
         </div>
@@ -2529,7 +2668,6 @@ function renderAssetWorkspace() {
 
 function inventorySummaryCards(items) {
   return [
-    { label: "재고 부족", value: items.filter((item) => item.onHand < item.safetyStock).length, detail: "안전재고 미만" },
     { label: "발주 필요", value: items.filter((item) => item.status === "발주 필요").length, detail: "즉시 발주 대상" },
     { label: "입고 대기", value: items.filter((item) => item.status === "입고 대기").length, detail: "입고 예정 품목" },
     { label: "출고 예정", value: items.filter((item) => item.outboundPlanned > 0).length, detail: "작업/판매 출고" },
@@ -2592,7 +2730,7 @@ function selectedInventorySales() {
 
 function getInventoryPaneWidth() {
   const stored = Number(localStorage.getItem(INVENTORY_LIST_PANE_WIDTH_STORAGE_KEY) || "");
-  return Number.isFinite(stored) && stored >= 360 ? stored : 720;
+  return Number.isFinite(stored) && stored >= 360 ? stored : 980;
 }
 
 function setInventoryPaneWidth(width) {
@@ -2622,8 +2760,9 @@ function renderInventoryWorkspace() {
   const items = isSalesView ? filteredInventorySales() : filteredInventoryItems();
   const selected = isSalesView ? selectedInventorySales() : selectedInventoryItem();
   const summaryCards = isSalesView ? inventorySalesSummaryCards(inventoryState.sales) : inventorySummaryCards(inventoryState.items);
-  const categoryOptions = Array.from(new Set(inventoryState.items.map((item) => item.category)));
-  const supplierOptions = Array.from(new Set((isSalesView ? inventoryState.sales.map((item) => item.customer) : inventoryState.items.map((item) => item.supplier))));
+  const listGridColumns = isSalesView
+    ? "132px minmax(0, 1fr) 96px 108px"
+    : "116px 112px minmax(160px, 1fr) 72px 78px 72px 116px 104px";
   const detailTabs = isSalesView
     ? [
         ["overview", "개요"],
@@ -2752,8 +2891,6 @@ function renderInventoryWorkspace() {
         <label>기간 <input class="text-field" type="date" name="start_date" value="${escapeAttribute(inventoryState.filters.startDate)}" /></label>
         <label>~ <input class="text-field" type="date" name="end_date" value="${escapeAttribute(inventoryState.filters.endDate)}" /></label>
         <label>상태 <select class="text-field" name="status"><option value="">전체</option>${(isSalesView ? ["출고 예정", "납품 완료", "청구 대기"] : ["정상", "발주 필요", "입고 대기"]).map((value) => `<option value="${escapeAttribute(value)}"${inventoryState.filters.status === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
-        <label>분류 <select class="text-field" name="category"><option value="">전체</option>${categoryOptions.map((value) => `<option value="${escapeAttribute(value)}"${inventoryState.filters.category === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
-        <label>거래처/공급처 <select class="text-field" name="supplier"><option value="">전체</option>${supplierOptions.map((value) => `<option value="${escapeAttribute(value)}"${inventoryState.filters.supplier === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
         <label class="project-filter-query">검색 <input class="text-field" type="search" name="query" value="${escapeAttribute(inventoryState.filters.query)}" placeholder="${isSalesView ? "거래처 / 품목명 / 판매번호 / 주문번호" : "품목명 / 품번 / 코드"}" /></label>
         <div class="project-filter-actions">
           <button type="submit" class="secondary-button">조회</button>
@@ -2770,20 +2907,46 @@ function renderInventoryWorkspace() {
             <strong>${isSalesView ? "판매 목록" : "부품 목록"}</strong>
             <span class="status-badge neutral">${items.length}건</span>
           </div>
-          <div class="project-list-head" style="grid-template-columns: 132px minmax(0, 1fr) 96px 108px;">
-            <div class="project-list-th"><span>${isSalesView ? "판매번호" : "품목번호"}</span></div>
-            <div class="project-list-th"><span>${isSalesView ? "품목/거래처" : "품목명"}</span></div>
-            <div class="project-list-th"><span>${isSalesView ? "예정일" : "공급처"}</span></div>
-            <div class="project-list-th"><span>상태</span></div>
+          <div class="project-list-head" style="grid-template-columns: ${listGridColumns};">
+            ${isSalesView
+              ? `
+                <div class="project-list-th"><span>판매번호</span></div>
+                <div class="project-list-th"><span>품목/거래처</span></div>
+                <div class="project-list-th"><span>예정일</span></div>
+                <div class="project-list-th"><span>상태</span></div>
+              `
+              : `
+                <div class="project-list-th"><span>품목번호</span></div>
+                <div class="project-list-th"><span>Part no.</span></div>
+                <div class="project-list-th"><span>ITEM</span></div>
+                <div class="project-list-th"><span>현재고</span></div>
+                <div class="project-list-th"><span>적정재고</span></div>
+                <div class="project-list-th"><span>발주</span></div>
+                <div class="project-list-th"><span>공급처</span></div>
+                <div class="project-list-th"><span>상태</span></div>
+              `}
           </div>
           <div class="project-list-scroll">
             <div class="project-list">
               ${items.map((item) => `
-                <button type="button" class="project-list-row${item.id === selected?.id ? " active" : ""}" style="grid-template-columns: 132px minmax(0, 1fr) 96px 108px;" data-inventory-select="${escapeAttribute(item.id)}">
-                  <span class="project-list-no">${item.no}</span>
-                  <span>${isSalesView ? `${item.itemName} · ${item.customer}` : item.name}</span>
-                  <span>${isSalesView ? item.plannedDate : item.supplier}</span>
-                  <span><span class="status-badge ${item.status === "발주 필요" ? "warn" : item.status === "입고 대기" ? "neutral" : item.status === "출고 예정" ? "warn" : item.status === "청구 대기" ? "neutral" : "ok"}">${item.status}</span></span>
+                <button type="button" class="project-list-row${item.id === selected?.id ? " active" : ""}" style="grid-template-columns: ${listGridColumns};" data-inventory-select="${escapeAttribute(item.id)}">
+                  ${isSalesView
+                    ? `
+                      <span class="project-list-no">${item.no}</span>
+                      <span>${item.itemName} · ${item.customer}</span>
+                      <span>${item.plannedDate}</span>
+                      <span><span class="status-badge ${item.status === "출고 예정" ? "warn" : item.status === "청구 대기" ? "neutral" : "ok"}">${item.status}</span></span>
+                    `
+                    : `
+                      <span class="project-list-no">${item.no}</span>
+                      <span>${item.code}</span>
+                      <span>${item.name}</span>
+                      <span>${item.onHand}${item.unit ? ` ${item.unit}` : ""}</span>
+                      <span>${item.safetyStock}${item.unit ? ` ${item.unit}` : ""}</span>
+                      <span>${item.inboundPending ? `${item.inboundPending}${item.unit ? ` ${item.unit}` : ""}` : "-"}</span>
+                      <span>${item.supplier}</span>
+                      <span><span class="status-badge ${item.status === "발주 필요" ? "warn" : item.status === "입고 대기" ? "neutral" : "ok"}">${item.status}</span></span>
+                    `}
                 </button>
               `).join("") || '<div class="project-empty">조건에 맞는 부품이 없습니다.</div>'}
             </div>
@@ -2914,12 +3077,50 @@ function resolvePhysicalAssetId(purpose = "COM", previousId = "") {
   return buildNextPhysicalAssetId(purpose, previousId);
 }
 
+function parseAssetCycleMonths(value = "") {
+  const cycle = String(value || "").trim();
+  if (!cycle) {
+    return 0;
+  }
+  if (cycle.includes("월간")) {
+    return 1;
+  }
+  if (cycle.includes("분기")) {
+    return 3;
+  }
+  if (cycle.includes("반기")) {
+    return 6;
+  }
+  if (cycle.includes("연간") || cycle.includes("년")) {
+    return 12;
+  }
+  const monthMatch = cycle.match(/(\d+)\s*개월/);
+  if (monthMatch) {
+    return Number(monthMatch[1]);
+  }
+  const dayMatch = cycle.match(/(\d+)\s*일/);
+  if (dayMatch) {
+    return Math.max(1, Math.round(Number(dayMatch[1]) / 30));
+  }
+  return 0;
+}
+
+function addAssetMonths(dateValue, months) {
+  const source = new Date(Date.UTC(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate()));
+  const targetYear = source.getUTCFullYear() + Math.floor((source.getUTCMonth() + months) / 12);
+  const targetMonth = (source.getUTCMonth() + months) % 12;
+  const safeMonth = targetMonth < 0 ? targetMonth + 12 : targetMonth;
+  const lastDay = new Date(Date.UTC(targetYear, safeMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, safeMonth, Math.min(source.getUTCDate(), lastDay)));
+}
+
 function normalizeAuditHistory(history = []) {
   return history
     .map((item) => ({
       date: String(item?.date || "").trim(),
       content: String(item?.content || "").trim(),
       cost: String(item?.cost || "").trim(),
+      currency: normalizeAssetCurrency(item?.currency),
     }))
     .filter((item) => item.date || item.content || item.cost);
 }
@@ -2930,6 +3131,7 @@ function normalizeRepairHistory(history = []) {
       date: String(item?.date || "").trim(),
       content: String(item?.content || "").trim(),
       cost: String(item?.cost || "").trim(),
+      currency: normalizeAssetCurrency(item?.currency),
     }))
     .filter((item) => item.date || item.content || item.cost);
 }
@@ -2949,7 +3151,7 @@ function formatLatestAuditEntry(asset) {
   if (!latest.date && !latest.content) {
     return "이력 없음";
   }
-  const costLabel = latest.cost ? ` / ${latest.cost}` : "";
+  const costLabel = latest.cost ? ` / ${formatAssetAccountingAmount(latest.cost, latest.currency)}` : "";
   if (!latest.date) {
     return `${latest.content}${costLabel}`.trim();
   }
@@ -2964,7 +3166,7 @@ function formatLatestRepairEntry(asset) {
   if (!latest.date && !latest.content) {
     return "이력 없음";
   }
-  const costLabel = latest.cost ? ` / ${latest.cost}` : "";
+  const costLabel = latest.cost ? ` / ${formatAssetAccountingAmount(latest.cost, latest.currency)}` : "";
   if (!latest.date) {
     return `${latest.content}${costLabel}`.trim();
   }
@@ -2972,6 +3174,66 @@ function formatLatestRepairEntry(asset) {
     return `${latest.date}${costLabel}`.trim();
   }
   return `${latest.date} / ${latest.content}${costLabel}`;
+}
+
+function assetNextInspectionDue(asset) {
+  const latest = getLatestAuditEntry(asset);
+  const months = parseAssetCycleMonths(asset?.auditCycle || "");
+  if (!latest.date || !months) {
+    return null;
+  }
+  const latestDate = new Date(`${latest.date}T00:00:00`);
+  if (Number.isNaN(latestDate.getTime())) {
+    return null;
+  }
+  const dueDate = addAssetMonths(latestDate, months);
+  const today = new Date();
+  const todayDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const diffDays = Math.ceil((dueDate.getTime() - todayDate.getTime()) / 86400000);
+  return {
+    date: dueDate.toISOString().slice(0, 10),
+    diffDays,
+  };
+}
+
+function formatAssetNextInspectionDue(asset) {
+  const due = assetNextInspectionDue(asset);
+  if (!due) {
+    return "다음 검사일 계산 불가";
+  }
+  if (due.diffDays < 0) {
+    return `다음 검사 ${due.date} / ${Math.abs(due.diffDays)}일 경과`;
+  }
+  if (due.diffDays === 0) {
+    return `다음 검사 ${due.date} / 오늘`;
+  }
+  return `다음 검사 ${due.date} / D-${due.diffDays}`;
+}
+
+function sumAssetHistoryCosts(history = []) {
+  const totals = new Map();
+  for (const entry of history) {
+    const amount = Number(String(entry?.cost || "").replace(/,/g, "").replace(/[₩$€¥원]/g, "").trim());
+    if (!Number.isFinite(amount)) {
+      continue;
+    }
+    const currency = normalizeAssetCurrency(entry?.currency);
+    totals.set(currency, (totals.get(currency) || 0) + amount);
+  }
+  return totals;
+}
+
+function mergeAssetCostTotals(asset) {
+  const totals = sumAssetHistoryCosts([...(asset?.auditHistory || []), ...(asset?.repairHistory || [])]);
+  return Array.from(totals.entries()).filter(([, amount]) => amount !== 0);
+}
+
+function formatAssetCostTotals(asset) {
+  const totals = mergeAssetCostTotals(asset);
+  if (!totals.length) {
+    return "누적 비용 없음";
+  }
+  return totals.map(([currency, amount]) => formatAssetAccountingAmount(amount, currency)).join(" / ");
 }
 
 function assetColumnValue(asset, key) {
@@ -3043,6 +3305,8 @@ function filteredPhysicalAssets() {
         asset.auditCycle,
         formatLatestAuditEntry(asset),
         formatLatestRepairEntry(asset),
+        formatAssetNextInspectionDue(asset),
+        formatAssetCostTotals(asset),
       ].some((value) => String(value || "").toLowerCase().includes(query));
     })
     .sort((left, right) => {
@@ -3067,6 +3331,11 @@ function renderKnowledgeHashtags(record) {
   return tags.map((tag) => `<span class="asset-hashtag">#${escapeTextarea(tag)}</span>`).join("");
 }
 
+function assetKnownHashtags() {
+  return Array.from(new Set(assetState.knowledgeRecords.flatMap((record) => normalizeKnowledgeHashtags(record))))
+    .sort((left, right) => left.localeCompare(right, "ko-KR"));
+}
+
 function filteredKnowledgeRecords() {
   const searchQuery = String(assetState.knowledgeSearch || "").trim().replace(/^#+/, "").toLowerCase();
   if (!searchQuery) {
@@ -3082,6 +3351,52 @@ function filteredKnowledgeRecords() {
       ...hashtags,
     ].some((value) => String(value || "").toLowerCase().includes(searchQuery));
   });
+}
+
+function physicalFilterChips(filters = {}) {
+  const chips = [];
+  if (filters.query) {
+    chips.push(`<button type="button" class="status-badge neutral" data-asset-filter-clear="query">검색: ${escapeTextarea(filters.query)}</button>`);
+  }
+  if (filters.purpose) {
+    chips.push(`<button type="button" class="status-badge neutral" data-asset-filter-clear="purpose">카테고리: ${escapeTextarea(filters.purpose)}</button>`);
+  }
+  if (filters.state) {
+    chips.push(`<button type="button" class="status-badge neutral" data-asset-filter-clear="audit">상태: ${assetStateLabel(filters.state)}</button>`);
+  }
+  if (filters.sortKey && filters.sortKey !== "updated_at") {
+    const column = assetPhysicalColumnDefinitions().find((item) => item.key === filters.sortKey);
+    chips.push(`<button type="button" class="status-badge neutral" data-asset-physical-reset>정렬: ${escapeTextarea(column?.label || filters.sortKey)} ${filters.sortDirection === "asc" ? "오름차순" : "내림차순"}</button>`);
+  }
+  return chips.length
+    ? `<div class="asset-panel-actions">${chips.join("")}<button type="button" class="secondary-button" data-asset-physical-reset>전체 초기화</button></div>`
+    : "";
+}
+
+function knowledgeFilterChips() {
+  const query = String(assetState.knowledgeSearch || "").trim();
+  return query
+    ? `<div class="asset-panel-actions"><button type="button" class="status-badge neutral" data-asset-knowledge-search-clear>검색: ${escapeTextarea(query)}</button></div>`
+    : "";
+}
+
+function renderAssetSearchAndRestore(selector) {
+  renderAssetWorkspace();
+  const queryInput = dashboardMainPane.querySelector(selector);
+  if (queryInput instanceof HTMLInputElement) {
+    queryInput.focus();
+    queryInput.setSelectionRange(queryInput.value.length, queryInput.value.length);
+  }
+}
+
+function scheduleAssetSearchRender(selector) {
+  if (assetSearchRenderTimer) {
+    clearTimeout(assetSearchRenderTimer);
+  }
+  assetSearchRenderTimer = setTimeout(() => {
+    assetSearchRenderTimer = null;
+    renderAssetSearchAndRestore(selector);
+  }, 120);
 }
 
 function assetFilterMenu(column, physicalFilters) {
@@ -3205,6 +3520,7 @@ function showAssetEditorDialog(kind, record = null) {
               <span>순번</span>
               <span>날짜</span>
               <span>내용</span>
+              <span>통화</span>
               <span>소요비용</span>
             </div>
             <div class="asset-audit-sheet-body">
@@ -3213,7 +3529,8 @@ function showAssetEditorDialog(kind, record = null) {
                   <span class="asset-audit-order">${index + 1}</span>
                   <input type="date" class="text-field" data-asset-audit-date value="${escapeAttribute(item.date)}" />
                   <input type="text" class="text-field" data-asset-audit-content value="${escapeAttribute(item.content)}" />
-                  <input type="text" class="text-field" data-asset-audit-cost value="${escapeAttribute(item.cost)}" />
+                  <select class="text-field" data-asset-audit-currency>${assetCurrencySelectOptions(item.currency)}</select>
+                  <input type="number" class="text-field" data-asset-audit-cost value="${escapeAttribute(accountingAmountValue(item.cost))}" min="0" step="0.01" inputmode="decimal" />
                 </div>
               `).join("")}
             </div>
@@ -3229,6 +3546,7 @@ function showAssetEditorDialog(kind, record = null) {
               <span>순번</span>
               <span>날짜</span>
               <span>내용</span>
+              <span>통화</span>
               <span>소요비용</span>
             </div>
             <div class="asset-repair-sheet-body">
@@ -3237,7 +3555,8 @@ function showAssetEditorDialog(kind, record = null) {
                   <span class="asset-audit-order">${index + 1}</span>
                   <input type="date" class="text-field" data-asset-repair-date value="${escapeAttribute(item.date)}" />
                   <input type="text" class="text-field" data-asset-repair-content value="${escapeAttribute(item.content)}" />
-                  <input type="text" class="text-field" data-asset-repair-cost value="${escapeAttribute(item.cost)}" />
+                  <select class="text-field" data-asset-repair-currency>${assetCurrencySelectOptions(item.currency)}</select>
+                  <input type="number" class="text-field" data-asset-repair-cost value="${escapeAttribute(accountingAmountValue(item.cost))}" min="0" step="0.01" inputmode="decimal" />
                 </div>
               `).join("")}
             </div>
@@ -3248,6 +3567,7 @@ function showAssetEditorDialog(kind, record = null) {
         </label>
       `;
     } else {
+      const knownHashtags = assetKnownHashtags();
       form.innerHTML = `
         <label>
           <span>등록번호</span>
@@ -3267,7 +3587,10 @@ function showAssetEditorDialog(kind, record = null) {
         </label>
         <label class="asset-edit-wide">
           <span>해시태그</span>
-          <input name="hashtags" class="text-field" value="${escapeAttribute(normalizeKnowledgeHashtags(record).map((tag) => `#${tag}`).join(" "))}" placeholder="#정비 #검사 #매뉴얼" />
+          <input name="hashtags" class="text-field" list="asset-knowledge-hashtag-options" value="${escapeAttribute(normalizeKnowledgeHashtags(record).map((tag) => `#${tag}`).join(" "))}" placeholder="#정비 #검사 #매뉴얼" />
+          <datalist id="asset-knowledge-hashtag-options">
+            ${knownHashtags.map((tag) => `<option value="#${escapeAttribute(tag)}"></option>`).join("")}
+          </datalist>
         </label>
       `;
     }
@@ -3325,7 +3648,7 @@ function showAssetEditorDialog(kind, record = null) {
         });
       };
 
-      const createAuditRow = (item = { date: "", content: "", cost: "" }) => {
+      const createAuditRow = (item = { date: "", content: "", cost: "", currency: "KRW" }) => {
         const row = document.createElement("div");
         row.className = "asset-audit-row";
         row.setAttribute("data-asset-audit-row", "");
@@ -3333,12 +3656,13 @@ function showAssetEditorDialog(kind, record = null) {
           <span class="asset-audit-order"></span>
           <input type="date" class="text-field" data-asset-audit-date value="${escapeAttribute(item.date || "")}" />
           <input type="text" class="text-field" data-asset-audit-content value="${escapeAttribute(item.content || "")}" />
-          <input type="text" class="text-field" data-asset-audit-cost value="${escapeAttribute(item.cost || "")}" />
+          <select class="text-field" data-asset-audit-currency>${assetCurrencySelectOptions(item.currency)}</select>
+          <input type="number" class="text-field" data-asset-audit-cost value="${escapeAttribute(accountingAmountValue(item.cost))}" min="0" step="0.01" inputmode="decimal" />
         `;
         return row;
       };
 
-      const createRepairRow = (item = { date: "", content: "", cost: "" }) => {
+      const createRepairRow = (item = { date: "", content: "", cost: "", currency: "KRW" }) => {
         const row = document.createElement("div");
         row.className = "asset-audit-row";
         row.setAttribute("data-asset-repair-row", "");
@@ -3346,7 +3670,8 @@ function showAssetEditorDialog(kind, record = null) {
           <span class="asset-audit-order"></span>
           <input type="date" class="text-field" data-asset-repair-date value="${escapeAttribute(item.date || "")}" />
           <input type="text" class="text-field" data-asset-repair-content value="${escapeAttribute(item.content || "")}" />
-          <input type="text" class="text-field" data-asset-repair-cost value="${escapeAttribute(item.cost || "")}" />
+          <select class="text-field" data-asset-repair-currency>${assetCurrencySelectOptions(item.currency)}</select>
+          <input type="number" class="text-field" data-asset-repair-cost value="${escapeAttribute(accountingAmountValue(item.cost))}" min="0" step="0.01" inputmode="decimal" />
         `;
         return row;
       };
@@ -3378,9 +3703,11 @@ function showAssetEditorDialog(kind, record = null) {
           row.querySelector("[data-asset-audit-date]")?.setAttribute("value", "");
           row.querySelector("[data-asset-audit-content]")?.setAttribute("value", "");
           row.querySelector("[data-asset-audit-cost]")?.setAttribute("value", "");
+          row.querySelector("[data-asset-audit-currency]")?.setAttribute("value", "KRW");
           const dateInput = row.querySelector("[data-asset-audit-date]");
           const contentInput = row.querySelector("[data-asset-audit-content]");
           const costInput = row.querySelector("[data-asset-audit-cost]");
+          const currencyInput = row.querySelector("[data-asset-audit-currency]");
           if (dateInput) {
             dateInput.value = "";
           }
@@ -3389,6 +3716,9 @@ function showAssetEditorDialog(kind, record = null) {
           }
           if (costInput) {
             costInput.value = "";
+          }
+          if (currencyInput) {
+            currencyInput.value = "KRW";
           }
           return;
         }
@@ -3409,9 +3739,11 @@ function showAssetEditorDialog(kind, record = null) {
           row.querySelector("[data-asset-repair-date]")?.setAttribute("value", "");
           row.querySelector("[data-asset-repair-content]")?.setAttribute("value", "");
           row.querySelector("[data-asset-repair-cost]")?.setAttribute("value", "");
+          row.querySelector("[data-asset-repair-currency]")?.setAttribute("value", "KRW");
           const dateInput = row.querySelector("[data-asset-repair-date]");
           const contentInput = row.querySelector("[data-asset-repair-content]");
           const costInput = row.querySelector("[data-asset-repair-cost]");
+          const currencyInput = row.querySelector("[data-asset-repair-currency]");
           if (dateInput) {
             dateInput.value = "";
           }
@@ -3420,6 +3752,9 @@ function showAssetEditorDialog(kind, record = null) {
           }
           if (costInput) {
             costInput.value = "";
+          }
+          if (currencyInput) {
+            currencyInput.value = "KRW";
           }
           return;
         }
@@ -3451,6 +3786,7 @@ function showAssetEditorDialog(kind, record = null) {
             date: row.querySelector("[data-asset-audit-date]")?.value || "",
             content: row.querySelector("[data-asset-audit-content]")?.value || "",
             cost: row.querySelector("[data-asset-audit-cost]")?.value || "",
+            currency: row.querySelector("[data-asset-audit-currency]")?.value || "KRW",
           })),
         );
         const repairHistory = normalizeRepairHistory(
@@ -3458,6 +3794,7 @@ function showAssetEditorDialog(kind, record = null) {
             date: row.querySelector("[data-asset-repair-date]")?.value || "",
             content: row.querySelector("[data-asset-repair-content]")?.value || "",
             cost: row.querySelector("[data-asset-repair-cost]")?.value || "",
+            currency: row.querySelector("[data-asset-repair-currency]")?.value || "KRW",
           })),
         );
         const latestAudit = auditHistory[auditHistory.length - 1] || { date: "", content: "" };
@@ -3607,6 +3944,7 @@ async function handleCreateCustomer(form) {
     : "신규 업체가 등록되었습니다.";
   customerState.uploadedFile = null;
   customerState.createDraft = {};
+  invalidateCustomerSearchCache();
   setCustomerView("detail");
   customerState.hasSearched = true;
   await showAppMessage(customerState.notice, "고객 등록");
@@ -3619,6 +3957,7 @@ async function handleCreateContact(form) {
   const result = await window.erpClient.addCustomerContact(customerState.selectedCustomerId, payload);
   customerState.selectedCustomer = result.data;
   customerState.notice = "담당자가 추가되었습니다.";
+  invalidateCustomerSearchCache();
   form.reset();
   renderCustomerWorkspace();
 }
@@ -3628,6 +3967,7 @@ async function handleUpdateCustomerMemo(form) {
   const result = await window.erpClient.updateCustomerMemo(customerState.selectedCustomerId, payload);
   customerState.selectedCustomer = result.data;
   customerState.notice = "메모가 저장되었습니다.";
+  invalidateCustomerSearchCache();
   renderCustomerWorkspace();
 }
 
@@ -3735,6 +4075,7 @@ async function handleSaveCustomerInlineEdit(options = {}) {
     });
   }
   customerState.notice = `${label} 저장 완료.`;
+  invalidateCustomerSearchCache();
   if (showAlert) {
     await showAppMessage("저장 완료");
   }
@@ -3775,6 +4116,7 @@ async function handleCreateAddress(form) {
   const payload = Object.fromEntries(new FormData(form).entries());
   const result = await window.erpClient.addCustomerAddress(customerState.selectedCustomerId, payload);
   customerState.selectedCustomer = result.data;
+  invalidateCustomerSearchCache();
   customerState.notice = "주소가 추가되었습니다.";
   form.reset();
   renderCustomerWorkspace();
@@ -3789,6 +4131,7 @@ async function handleCreateAsset(form) {
     ? await window.erpClient.updateCustomerAsset(assetId, payload)
     : await window.erpClient.addCustomerAsset(customerState.selectedCustomerId, payload);
   customerState.selectedCustomer = result.data;
+  invalidateCustomerSearchCache();
   const nextAsset = assetId ? assetId : result.data.assets[0]?.id;
   customerState.selectedAssetId = nextAsset || customerState.selectedAssetId;
   if (assetId) {
@@ -3816,6 +4159,7 @@ async function handleCreateEquipment(form) {
     ? await window.erpClient.updateAssetEquipment(equipmentId, payload)
     : await window.erpClient.addAssetEquipment(assetId, payload);
   customerState.selectedCustomer = result.data;
+  invalidateCustomerSearchCache();
   customerState.selectedAssetId = assetId;
   customerState.selectedEquipmentId = equipmentId || null;
   if (equipmentId) {
@@ -3844,6 +4188,7 @@ async function handleDeleteCustomerAsset(assetId) {
 
   const result = await window.erpClient.deleteCustomerAsset(assetId);
   customerState.selectedCustomer = result.data;
+  invalidateCustomerSearchCache();
   customerState.selectedAssetId = result.data.assets[0]?.id || null;
   customerState.selectedEquipmentId = null;
   customerState.assetEditorMode = "edit";
@@ -3864,11 +4209,28 @@ async function handleDeleteAssetEquipment(equipmentId) {
 
   const result = await window.erpClient.deleteAssetEquipment(equipmentId);
   customerState.selectedCustomer = result.data;
+  invalidateCustomerSearchCache();
   const selectedAsset = getSelectedAsset(result.data);
   customerState.selectedAssetId = selectedAsset?.id || null;
   customerState.selectedEquipmentId = null;
   customerState.equipmentEditorMode = "create";
   customerState.notice = "장비가 삭제되었습니다.";
+  renderCustomerWorkspace();
+}
+
+async function handleRestoreAssetEquipment(equipmentId) {
+  if (!equipmentId || !(await requestAppConfirm("삭제된 장비를 복구할까요?"))) {
+    return;
+  }
+
+  const result = await window.erpClient.restoreAssetEquipment(equipmentId);
+  customerState.selectedCustomer = result.data;
+  invalidateCustomerSearchCache();
+  const selectedAsset = getSelectedAsset(result.data);
+  customerState.selectedAssetId = selectedAsset?.id || customerState.selectedAssetId;
+  customerState.selectedEquipmentId = equipmentId;
+  customerState.equipmentEditorMode = "edit";
+  customerState.notice = "장비를 복구했습니다.";
   renderCustomerWorkspace();
 }
 
@@ -3896,7 +4258,7 @@ function syncCustomerReferencesAfterMerge({ keepCustomerId, keepCustomerName, me
   }
 }
 
-async function mergeCustomersMockService({ keepCustomerId, mergeCustomerIds }) {
+async function mergeCustomersService({ keepCustomerId, mergeCustomerIds }) {
   const keepCustomer = customerListItemById(keepCustomerId);
   const mergedCustomers = mergeCustomerIds.map((id) => customerListItemById(id)).filter(Boolean);
   const mergedCustomerIds = mergedCustomers.map((customer) => customer.id);
@@ -3910,25 +4272,16 @@ async function mergeCustomersMockService({ keepCustomerId, mergeCustomerIds }) {
     mergedCustomerNames,
   });
 
-  customerState.mergeHistory = [
-    {
-      mergedAt: new Date().toISOString(),
-      user: dashboardState.session?.data?.user?.username || dashboardState.session?.data?.user?.displayName || "시연 사용자",
-      keepCustomerId,
-      keepCustomerName,
-      mergedCustomerIds,
-      mergedCustomerNames,
-    },
-    ...(customerState.mergeHistory || []),
-  ];
-
+  const result = await window.erpClient.mergeCustomers({
+    keep_customer_id: keepCustomerId,
+    merge_customer_ids: mergeCustomerIds,
+  });
+  customerState.selectedCustomer = result.data;
+  invalidateCustomerSearchCache();
   customerState.list = customerState.list.filter((customer) => !mergedCustomerIds.includes(customer.id));
   customerState.multiSelectedCustomerIds = [];
   customerState.selectedCustomerId = keepCustomerId;
-  customerState.notice = `${mergedCustomerNames.length}개 회사를 ${keepCustomerName}(으)로 합쳤습니다. 서버 병합 API 연결 전까지 현재 화면 상태에 mock 반영됩니다.`;
-  if (customerState.selectedCustomer?.customer?.id && mergedCustomerIds.includes(customerState.selectedCustomer.customer.id)) {
-    customerState.selectedCustomer = null;
-  }
+  customerState.notice = `${mergedCustomerNames.length}개 회사를 ${keepCustomerName}(으)로 합쳤습니다. 병합 이력을 저장했습니다.`;
 }
 
 async function handleMergeSelectedCustomers() {
@@ -3944,7 +4297,7 @@ async function handleMergeSelectedCustomers() {
   }
 
   const mergeCustomerIds = selectedIds.filter((id) => id !== keepCustomerId);
-  await mergeCustomersMockService({ keepCustomerId, mergeCustomerIds });
+  await mergeCustomersService({ keepCustomerId, mergeCustomerIds });
   try {
     await loadCustomerDetail(keepCustomerId, customerState.notice);
   } catch {
@@ -3979,7 +4332,17 @@ async function handleDeleteEquipmentMasterOption(fieldName, value) {
 
   if (usage.length) {
     addEquipmentMasterValue(fieldName, result.nextValue);
+    await window.erpClient.mergeEquipmentOption({
+      option_type: fieldName,
+      from_value: value,
+      to_value: result.nextValue,
+    });
     await replaceEquipmentMasterValue(fieldName, value, result.nextValue);
+  } else {
+    await window.erpClient.deactivateEquipmentOption({
+      option_type: fieldName,
+      option_value: value,
+    });
   }
 
   deleteEquipmentMasterValue(fieldName, value);
@@ -4230,6 +4593,13 @@ dashboardMainPane.addEventListener("click", async (event) => {
     return;
   }
 
+  const knowledgeSearchClear = event.target.closest("[data-asset-knowledge-search-clear]");
+  if (knowledgeSearchClear) {
+    assetState.knowledgeSearch = "";
+    renderAssetWorkspace();
+    return;
+  }
+
   const assetSortButton = event.target.closest("[data-asset-sort]");
   if (assetSortButton) {
     const sortKey = assetSortButton.dataset.assetSort || "updated_at";
@@ -4309,6 +4679,12 @@ dashboardMainPane.addEventListener("click", async (event) => {
     return;
   }
 
+  const customerEquipmentRestoreButton = event.target.closest("[data-customer-equipment-restore]");
+  if (customerEquipmentRestoreButton) {
+    await handleRestoreAssetEquipment(customerEquipmentRestoreButton.dataset.customerEquipmentRestore || "");
+    return;
+  }
+
   const customerContextMasterDeleteButton = event.target.closest("[data-customer-context-action='master-delete']");
   if (customerContextMasterDeleteButton) {
     const fieldName = customerState.contextMenu.fieldKey || "";
@@ -4316,6 +4692,15 @@ dashboardMainPane.addEventListener("click", async (event) => {
     closeCustomerContextMenu();
     renderCustomerWorkspace();
     await handleDeleteEquipmentMasterOption(fieldName, value);
+    return;
+  }
+
+  const customerMasterManageDeleteButton = event.target.closest("[data-customer-master-manage-delete]");
+  if (customerMasterManageDeleteButton) {
+    await handleDeleteEquipmentMasterOption(
+      customerMasterManageDeleteButton.dataset.customerMasterManageDelete || "",
+      customerMasterManageDeleteButton.dataset.customerMasterManageValue || "",
+    );
     return;
   }
 
@@ -4520,7 +4905,7 @@ dashboardMainPane.addEventListener("click", async (event) => {
     if (!(await confirmCustomerInlineEditBeforeLeave())) {
       return;
     }
-    await refreshCustomerWorkspace({ notice: "고객 목록을 새로고침했습니다." });
+    await refreshCustomerWorkspace({ notice: "고객 목록을 새로고침했습니다.", force: true });
     return;
   }
 });
@@ -4557,6 +4942,15 @@ dashboardMainPane.addEventListener("dblclick", async (event) => {
 });
 
 dashboardMainPane.addEventListener("keydown", async (event) => {
+  const customerMasterSelect = event.target.closest("#customer-equipment-form select[data-master-field]");
+  if (customerMasterSelect instanceof HTMLSelectElement && event.key === "Enter") {
+    event.preventDefault();
+    event.stopPropagation();
+    customerMasterSelect.blur();
+    customerMasterSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+
   if (await handleOrderKeydown(event)) {
     event.preventDefault();
     event.stopPropagation();
@@ -4885,24 +5279,20 @@ dashboardMainPane.addEventListener("input", (event) => {
   const knowledgeSearch = event.target.closest("[data-asset-knowledge-search]");
   if (knowledgeSearch) {
     assetState.knowledgeSearch = knowledgeSearch.value || "";
-    renderAssetWorkspace();
-    const queryInput = dashboardMainPane.querySelector("[data-asset-knowledge-search]");
-    if (queryInput instanceof HTMLInputElement) {
-      queryInput.focus();
-      queryInput.setSelectionRange(queryInput.value.length, queryInput.value.length);
+    if (assetSearchComposing || event.isComposing) {
+      return;
     }
+    scheduleAssetSearchRender("[data-asset-knowledge-search]");
     return;
   }
 
   const knowledgeTagSearch = event.target.closest("[data-asset-knowledge-tag-search]");
   if (knowledgeTagSearch) {
     assetState.knowledgeTagSearch = knowledgeTagSearch.value || "";
-    renderAssetWorkspace();
-    const queryInput = dashboardMainPane.querySelector("[data-asset-knowledge-tag-search]");
-    if (queryInput instanceof HTMLInputElement) {
-      queryInput.focus();
-      queryInput.setSelectionRange(queryInput.value.length, queryInput.value.length);
+    if (assetSearchComposing || event.isComposing) {
+      return;
     }
+    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]");
     return;
   }
 
@@ -4913,13 +5303,13 @@ dashboardMainPane.addEventListener("input", (event) => {
       ...assetState.physicalFilters,
       [key]: assetFilter.value || "",
     };
-    renderAssetWorkspace();
+    if (assetSearchComposing || event.isComposing) {
+      return;
+    }
     if (key === "query") {
-      const queryInput = dashboardMainPane.querySelector('[data-asset-physical-filter="query"]');
-      if (queryInput instanceof HTMLInputElement) {
-        queryInput.focus();
-        queryInput.setSelectionRange(queryInput.value.length, queryInput.value.length);
-      }
+      scheduleAssetSearchRender('[data-asset-physical-filter="query"]');
+    } else {
+      renderAssetWorkspace();
     }
     return;
   }
@@ -4930,6 +5320,47 @@ dashboardMainPane.addEventListener("input", (event) => {
 
   if (handleOrderInput(event)) {
     return;
+  }
+});
+
+dashboardMainPane.addEventListener("compositionstart", (event) => {
+  if (
+    event.target.closest("[data-asset-knowledge-search]")
+    || event.target.closest("[data-asset-knowledge-tag-search]")
+    || event.target.closest("[data-asset-physical-filter]")
+  ) {
+    assetSearchComposing = true;
+  }
+});
+
+dashboardMainPane.addEventListener("compositionend", (event) => {
+  assetSearchComposing = false;
+  const knowledgeSearch = event.target.closest("[data-asset-knowledge-search]");
+  if (knowledgeSearch) {
+    assetState.knowledgeSearch = knowledgeSearch.value || "";
+    scheduleAssetSearchRender("[data-asset-knowledge-search]");
+    return;
+  }
+
+  const knowledgeTagSearch = event.target.closest("[data-asset-knowledge-tag-search]");
+  if (knowledgeTagSearch) {
+    assetState.knowledgeTagSearch = knowledgeTagSearch.value || "";
+    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]");
+    return;
+  }
+
+  const assetFilter = event.target.closest("[data-asset-physical-filter]");
+  if (assetFilter) {
+    const key = assetFilter.dataset.assetPhysicalFilter || "";
+    assetState.physicalFilters = {
+      ...assetState.physicalFilters,
+      [key]: assetFilter.value || "",
+    };
+    if (key === "query") {
+      scheduleAssetSearchRender('[data-asset-physical-filter="query"]');
+    } else {
+      renderAssetWorkspace();
+    }
   }
 });
 
@@ -5003,6 +5434,10 @@ dashboardMainPane.addEventListener("change", async (event) => {
   }
 
   addEquipmentMasterValue(fieldName, normalizedValue);
+  await window.erpClient.upsertEquipmentOption({
+    option_type: fieldName,
+    option_value: normalizedValue,
+  });
 
   const option = document.createElement("option");
   option.value = normalizedValue;

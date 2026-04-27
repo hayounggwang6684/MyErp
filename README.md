@@ -85,12 +85,13 @@ scripts/
 - 업무 흐름 문서는 실제 ERP 업무 처리 순서를 설명한다.
 - 개발 절차 문서는 브랜치, Windows 설치 테스트, GitHub Releases 배포 전 검증 절차를 설명한다.
 - 현재 운영 기준 서버 실행은 `npm run start:db:prod`이며, 서버는 Mac mini에서 직접 패치하고 클라이언트는 GitHub Releases로 배포한다.
+- 현재 배포 기준 버전은 `0.3.1`이며 GitHub Release 태그는 `v0.3.1` 형식을 사용한다.
 - 외부 공개는 `deploy/cloudflare/README.md` 기준의 Cloudflare Tunnel 구성을 기본으로 한다.
 - Cloudflare Access를 앞단에 붙일 경우 Electron 클라이언트는 `client/constants.js`의 `cloudflareAccess` 설정으로 `CF-Access-Client-Id` / `CF-Access-Client-Secret` 헤더를 보낼 수 있다.
 - GitHub Actions로 Windows 및 macOS 클라이언트를 릴리즈할 때 Cloudflare Access를 같이 포함하려면 저장소 시크릿 `CLOUDFLARE_ACCESS_CLIENT_ID`, `CLOUDFLARE_ACCESS_CLIENT_SECRET`를 설정해야 한다.
 - macOS 클라이언트는 `client:dist:mac`, `client:release:mac` 스크립트로 `dmg`와 `zip` 설치 자산을 생성한다.
 - Mac mini에서 빠르게 로컬 설치본을 확인할 때는 `npm run client:dist:mac:local` 을 실행하면 결과물이 `dist/mac` 폴더에 정리된다.
-- `dist/mac/archive` 는 minor 기준 스냅샷 보관 폴더다. 예를 들어 `0.1.33` 빌드는 `0.1.0`, `0.2.x` 빌드는 `0.2.0` 기준으로 덮어써 보관한다.
+- `dist/mac/archive` 는 minor 기준 스냅샷 보관 폴더다. 예를 들어 `0.3.1` 빌드는 `0.3.0` 기준으로 덮어써 보관한다.
 - 아카이브가 10개를 넘으면 가장 오래된 minor 스냅샷부터 자동 삭제한다.
 - major가 바뀌면 예전 major 아카이브는 가장 마지막 minor 스냅샷 1개만 남기고 나머지는 자동 삭제한다.
 - 일반 사용자 브라우저 경로 `/`, `/login`, `/dashboard`, `/mfa/verify` 는 더 이상 업무 UI를 제공하지 않고 설치형 클라이언트 안내만 제공한다.

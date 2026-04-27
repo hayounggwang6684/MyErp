@@ -8,6 +8,8 @@ import type {
   CustomerContact,
   CustomerDetail,
   CustomerEquipment,
+  CustomerEquipmentHistory,
+  CustomerMergeHistory,
   EquipmentMasterOption,
   CustomerSummary,
   EngineModel,
@@ -22,6 +24,28 @@ function text(value: unknown, fallback = "") {
 function nullableText(value: unknown) {
   const normalized = text(value);
   return normalized || null;
+}
+
+const CUSTOMER_SEARCH_LIMIT = 100;
+
+function normalizeSearchValue(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/cat/g, "caterpillar")
+    .replace(/\s+/g, " ");
+}
+
+function compactSearchValue(value: string) {
+  return value.replace(/[^0-9a-zA-Z가-힣]+/g, "");
+}
+
+function canonicalEquipmentMasterValue(optionType: string, value: unknown) {
+  const normalized = text(value);
+  if (optionType === "manufacturer" && normalized.toLowerCase() === "cat") {
+    return "Caterpillar";
+  }
+  return normalized;
 }
 
 function booleanValue(value: unknown) {
@@ -49,6 +73,7 @@ function mapCustomerSummary(row: {
   primary_contact_phone: string | null;
   asset_count: number;
   equipment_count: number;
+  match_hint?: string | null;
   updated_at: Date;
 }) {
   return {
@@ -69,6 +94,7 @@ function mapCustomerSummary(row: {
     assetCount: row.asset_count,
     equipmentCount: row.equipment_count,
     duplicateHints: row.business_registration_no ? [`사업자번호 ${row.business_registration_no}`] : [],
+    matchHint: row.match_hint || null,
     updatedAt: row.updated_at.toISOString(),
   } satisfies CustomerSummary;
 }
@@ -169,6 +195,9 @@ function mapEquipment(row: {
   manufacturer: string;
   model_name: string;
   notes: string;
+  created_by_name?: string | null;
+  updated_by_name?: string | null;
+  deleted_at?: Date | null;
   updated_at: Date;
 }) {
   return {
@@ -185,8 +214,55 @@ function mapEquipment(row: {
     manufacturer: row.manufacturer,
     modelName: row.model_name,
     notes: row.notes,
+    createdByName: row.created_by_name || null,
+    updatedByName: row.updated_by_name || null,
+    deletedAt: row.deleted_at?.toISOString() || null,
     updatedAt: row.updated_at.toISOString(),
   } satisfies CustomerEquipment;
+}
+
+function mapEquipmentHistory(row: {
+  id: string;
+  equipment_id: string;
+  customer_id: string;
+  asset_id: string | null;
+  action: string;
+  before_snapshot: Record<string, unknown>;
+  after_snapshot: Record<string, unknown>;
+  created_at: Date;
+  created_by_name: string | null;
+}) {
+  return {
+    id: row.id,
+    equipmentId: row.equipment_id,
+    customerId: row.customer_id,
+    assetId: row.asset_id,
+    action: row.action,
+    beforeSnapshot: row.before_snapshot || {},
+    afterSnapshot: row.after_snapshot || {},
+    createdAt: row.created_at.toISOString(),
+    createdByName: row.created_by_name,
+  } satisfies CustomerEquipmentHistory;
+}
+
+function mapMergeHistory(row: {
+  id: string;
+  keep_customer_id: string;
+  merged_customer_id: string;
+  merged_customer_name: string;
+  merged_snapshot: Record<string, unknown>;
+  created_at: Date;
+  created_by_name: string | null;
+}) {
+  return {
+    id: row.id,
+    keepCustomerId: row.keep_customer_id,
+    mergedCustomerId: row.merged_customer_id,
+    mergedCustomerName: row.merged_customer_name,
+    mergedSnapshot: row.merged_snapshot || {},
+    createdAt: row.created_at.toISOString(),
+    createdByName: row.created_by_name,
+  } satisfies CustomerMergeHistory;
 }
 
 function mapEngineModel(row: {
@@ -333,10 +409,110 @@ function extractBusinessLicenseFields(source: string) {
 }
 
 export class CustomerService {
+  private async refreshCustomerSearchIndex(customerId: string, executor: DbExecutor) {
+    await executor.query(
+      `insert into master.customer_search_index (customer_id, search_text, search_normalized, updated_at)
+       select
+         c.id,
+         concat_ws(' ',
+           c.customer_no,
+           c.customer_name,
+           c.business_registration_no,
+           c.representative_name,
+           c.company_phone,
+           c.company_email,
+           coalesce(string_agg(distinct cc.contact_name, ' '), ''),
+           coalesce(string_agg(distinct cc.mobile_phone, ' '), ''),
+           coalesce(string_agg(distinct cc.office_phone, ' '), ''),
+           coalesce(string_agg(distinct a.asset_name, ' '), ''),
+           coalesce(string_agg(distinct a.vessel_type, ' '), ''),
+           coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+           coalesce(string_agg(distinct e.manufacturer, ' '), ''),
+           coalesce(string_agg(distinct e.model_name, ' '), ''),
+           coalesce(string_agg(distinct e.serial_no, ' '), '')
+         ) as search_text,
+         lower(regexp_replace(concat_ws(' ',
+           c.customer_no,
+           c.customer_name,
+           c.business_registration_no,
+           regexp_replace(coalesce(c.business_registration_no, ''), '[^0-9a-zA-Z가-힣]+', '', 'g'),
+           c.representative_name,
+           c.company_phone,
+           regexp_replace(coalesce(c.company_phone, ''), '[^0-9a-zA-Z가-힣]+', '', 'g'),
+           c.company_email,
+           coalesce(string_agg(distinct cc.contact_name, ' '), ''),
+           coalesce(string_agg(distinct cc.mobile_phone, ' '), ''),
+           coalesce(string_agg(distinct regexp_replace(cc.mobile_phone, '[^0-9a-zA-Z가-힣]+', '', 'g'), ' '), ''),
+           coalesce(string_agg(distinct cc.office_phone, ' '), ''),
+           coalesce(string_agg(distinct regexp_replace(cc.office_phone, '[^0-9a-zA-Z가-힣]+', '', 'g'), ' '), ''),
+           coalesce(string_agg(distinct a.asset_name, ' '), ''),
+           coalesce(string_agg(distinct a.vessel_type, ' '), ''),
+           coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+           coalesce(string_agg(distinct e.manufacturer, ' '), ''),
+           coalesce(string_agg(distinct case when lower(e.manufacturer) = 'cat' then 'caterpillar' else e.manufacturer end, ' '), ''),
+           coalesce(string_agg(distinct e.model_name, ' '), ''),
+           coalesce(string_agg(distinct e.serial_no, ' '), '')
+         ), '\\s+', ' ', 'g')) as search_normalized,
+         now()
+       from master.customers c
+       left join master.customer_contacts cc on cc.customer_id = c.id
+       left join master.customer_assets a on a.customer_id = c.id
+       left join master.customer_equipments e on e.customer_id = c.id and e.deleted_at is null
+       where c.id = $1
+       group by c.id
+       on conflict (customer_id) do update
+         set search_text = excluded.search_text,
+             search_normalized = excluded.search_normalized,
+             updated_at = now()`,
+      [customerId],
+    );
+  }
+
+  private async getEquipmentSnapshot(equipmentId: string, executor: DbExecutor) {
+    const result = await executor.query<Record<string, unknown>>(
+      `select id, asset_id, customer_id, equipment_name, equipment_type, status, serial_no, installation_position,
+              engine_model_id, gearbox_model_id, manufacturer, model_name, notes, deleted_at, created_at, updated_at
+       from master.customer_equipments
+       where id = $1`,
+      [equipmentId],
+    );
+    return result.rows[0] || {};
+  }
+
+  private async recordEquipmentHistory(
+    executor: DbExecutor,
+    input: {
+      equipmentId: string;
+      customerId: string;
+      assetId: string | null;
+      action: string;
+      beforeSnapshot?: Record<string, unknown>;
+      afterSnapshot?: Record<string, unknown>;
+      actorUserId?: string;
+    },
+  ) {
+    await executor.query(
+      `insert into master.customer_equipment_change_history (
+         id, equipment_id, customer_id, asset_id, action, before_snapshot, after_snapshot, created_by
+       ) values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)`,
+      [
+        crypto.randomUUID(),
+        input.equipmentId,
+        input.customerId,
+        input.assetId,
+        input.action,
+        JSON.stringify(input.beforeSnapshot || {}),
+        JSON.stringify(input.afterSnapshot || {}),
+        input.actorUserId || null,
+      ],
+    );
+  }
+
   async listCustomers(search?: string, client?: DbExecutor) {
     const executor: DbExecutor = client ?? { query };
     const normalizedSearch = text(search);
-    const searchValue = normalizedSearch ? `%${normalizedSearch}%` : null;
+    const searchTokens = normalizedSearch ? [normalizeSearchValue(normalizedSearch), compactSearchValue(normalizedSearch)].filter(Boolean) : [];
+    const searchValue = searchTokens.length ? `%${Array.from(new Set(searchTokens)).join("%")}%` : null;
     type CustomerListRow = {
       id: string;
       customer_no: string;
@@ -354,6 +530,7 @@ export class CustomerService {
       primary_contact_phone: string | null;
       asset_count: number;
       equipment_count: number;
+      match_hint: string | null;
       updated_at: Date;
     };
 
@@ -376,6 +553,7 @@ export class CustomerService {
            nullif(coalesce(pc.mobile_phone, pc.office_phone), '') as primary_contact_phone,
            coalesce(ac.asset_count, 0)::int as asset_count,
            coalesce(ec.equipment_count, 0)::int as equipment_count,
+           null::text as match_hint,
            c.updated_at
          from master.customers c
          left join (
@@ -395,9 +573,12 @@ export class CustomerService {
          left join (
            select customer_id, count(*)::int as equipment_count
            from master.customer_equipments
+           where deleted_at is null
            group by customer_id
          ) ec on ec.customer_id = c.id
-         order by c.updated_at desc, c.customer_name asc`,
+         where c.status = 'ACTIVE'
+         order by c.updated_at desc, c.customer_name asc
+         limit ${CUSTOMER_SEARCH_LIMIT}`,
       );
 
       return result.rows.map(mapCustomerSummary);
@@ -421,6 +602,7 @@ export class CustomerService {
          nullif(coalesce(pc.mobile_phone, pc.office_phone), '') as primary_contact_phone,
          coalesce(ac.asset_count, 0)::int as asset_count,
          coalesce(ec.equipment_count, 0)::int as equipment_count,
+         left(matched.search_text, 120) as match_hint,
          matched.updated_at
        from (
          select
@@ -436,39 +618,14 @@ export class CustomerService {
            c.tax_category,
            c.bank_account,
            c.invoice_email,
-           c.updated_at
+           c.updated_at,
+           si.search_text
          from master.customers c
-         where (
-           c.customer_name ilike $1
-           or coalesce(c.business_registration_no, '') ilike $1
-           or exists (
-             select 1
-             from master.customer_contacts cc
-             where cc.customer_id = c.id
-               and (
-                 cc.contact_name ilike $1
-                 or cc.mobile_phone ilike $1
-                 or cc.office_phone ilike $1
-               )
-           )
-           or exists (
-             select 1
-             from master.customer_assets a
-             where a.customer_id = c.id
-               and a.asset_name ilike $1
-           )
-           or exists (
-             select 1
-             from master.customer_equipments e
-             where e.customer_id = c.id
-               and (
-                 e.serial_no ilike $1
-                 or e.equipment_name ilike $1
-               )
-           )
-         )
+         join master.customer_search_index si on si.customer_id = c.id
+         where c.status = 'ACTIVE'
+           and si.search_normalized ilike $1
          order by c.updated_at desc, c.customer_name asc
-         limit 100
+         limit $2
        ) matched
        left join lateral (
          select
@@ -489,9 +646,10 @@ export class CustomerService {
          select count(*)::int as equipment_count
          from master.customer_equipments e
          where e.customer_id = matched.id
+           and e.deleted_at is null
        ) ec on true
        order by matched.updated_at desc, matched.customer_name asc`,
-      [searchValue],
+      [searchValue, CUSTOMER_SEARCH_LIMIT],
     );
 
     return result.rows.map(mapCustomerSummary);
@@ -555,7 +713,7 @@ export class CustomerService {
            limit 1
          ) as primary_contact_phone,
          (select count(*)::int from master.customer_assets a where a.customer_id = c.id) as asset_count,
-         (select count(*)::int from master.customer_equipments e where e.customer_id = c.id) as equipment_count
+         (select count(*)::int from master.customer_equipments e where e.customer_id = c.id and e.deleted_at is null) as equipment_count
        from master.customers c
        where c.id = $1`,
       [customerId],
@@ -565,7 +723,7 @@ export class CustomerService {
       return null;
     }
 
-    const [contactsResult, addressesResult, assetsResult, equipmentsResult, filesResult, extractionResult] = await Promise.all([
+    const [contactsResult, addressesResult, assetsResult, equipmentsResult, filesResult, extractionResult, mergeHistoryResult, equipmentHistoryResult] = await Promise.all([
       executor.query<{
         id: string;
         customer_id: string;
@@ -636,12 +794,20 @@ export class CustomerService {
         manufacturer: string;
         model_name: string;
         notes: string;
+        created_by_name: string | null;
+        updated_by_name: string | null;
+        deleted_at: Date | null;
         updated_at: Date;
       }>(
-        `select *
-         from master.customer_equipments
-         where customer_id = $1
-         order by updated_at desc, equipment_name asc`,
+        `select e.*,
+                coalesce(cu.name, cu.username) as created_by_name,
+                coalesce(uu.name, uu.username) as updated_by_name
+         from master.customer_equipments e
+         left join identity.users cu on cu.id = e.created_by
+         left join identity.users uu on uu.id = e.updated_by
+         where e.customer_id = $1
+           and e.deleted_at is null
+         order by e.updated_at desc, e.equipment_name asc`,
         [customerId],
       ),
       executor.query<{
@@ -689,6 +855,42 @@ export class CustomerService {
          limit 1`,
         [customerId],
       ),
+      executor.query<{
+        id: string;
+        keep_customer_id: string;
+        merged_customer_id: string;
+        merged_customer_name: string;
+        merged_snapshot: Record<string, unknown>;
+        created_at: Date;
+        created_by_name: string | null;
+      }>(
+        `select h.*, coalesce(u.name, u.username) as created_by_name
+         from master.customer_merge_history h
+         left join identity.users u on u.id = h.created_by
+         where h.keep_customer_id = $1
+         order by h.created_at desc
+         limit 20`,
+        [customerId],
+      ),
+      executor.query<{
+        id: string;
+        equipment_id: string;
+        customer_id: string;
+        asset_id: string | null;
+        action: string;
+        before_snapshot: Record<string, unknown>;
+        after_snapshot: Record<string, unknown>;
+        created_at: Date;
+        created_by_name: string | null;
+      }>(
+        `select h.*, coalesce(u.name, u.username) as created_by_name
+         from master.customer_equipment_change_history h
+         left join identity.users u on u.id = h.created_by
+         where h.customer_id = $1
+         order by h.created_at desc
+         limit 50`,
+        [customerId],
+      ),
     ]);
 
     const equipments = equipmentsResult.rows.map(mapEquipment);
@@ -713,6 +915,8 @@ export class CustomerService {
       assets,
       files: filesResult.rows.map(mapFile),
       latestExtraction: extractionResult.rows[0] ? mapExtraction(extractionResult.rows[0]) : null,
+      mergeHistory: mergeHistoryResult.rows.map(mapMergeHistory),
+      equipmentHistory: equipmentHistoryResult.rows.map(mapEquipmentHistory),
     };
   }
 
@@ -771,6 +975,7 @@ export class CustomerService {
         );
       }
 
+      await this.refreshCustomerSearchIndex(customerId, client);
       const detail = await this.getCustomerById(customerId, client);
       return {
         customer: detail,
@@ -927,6 +1132,8 @@ export class CustomerService {
         }
       }
 
+      await this.refreshCustomerSearchIndex(customerId, client);
+
       return this.getCustomerById(customerId, client);
     });
   }
@@ -959,6 +1166,7 @@ export class CustomerService {
         ],
       );
 
+      await this.refreshCustomerSearchIndex(customerId, client);
       return this.getCustomerById(customerId, client);
     });
   }
@@ -1012,6 +1220,7 @@ export class CustomerService {
         );
       }
 
+      await this.refreshCustomerSearchIndex(contact.customer_id, client);
       return this.getCustomerById(contact.customer_id, client);
     });
   }
@@ -1035,6 +1244,7 @@ export class CustomerService {
         ],
       );
 
+      await this.refreshCustomerSearchIndex(customerId, client);
       return this.getCustomerById(customerId, client);
     });
   }
@@ -1061,6 +1271,7 @@ export class CustomerService {
         ],
       );
 
+      await this.refreshCustomerSearchIndex(customerId, client);
       return this.getCustomerById(customerId, client);
     });
   }
@@ -1107,6 +1318,7 @@ export class CustomerService {
         );
       }
 
+      await this.refreshCustomerSearchIndex(asset.customer_id, client);
       return this.getCustomerById(asset.customer_id, client);
     });
   }
@@ -1125,6 +1337,7 @@ export class CustomerService {
       await client.query(`delete from master.customer_equipments where asset_id = $1`, [assetId]);
       await client.query(`delete from master.customer_assets where id = $1`, [assetId]);
 
+      await this.refreshCustomerSearchIndex(asset.customer_id, client);
       return this.getCustomerById(asset.customer_id, client);
     });
   }
@@ -1156,13 +1369,23 @@ export class CustomerService {
           text(input.installation_position),
           nullableText(input.engine_model_id),
           nullableText(input.gearbox_model_id),
-          text(input.manufacturer),
+          canonicalEquipmentMasterValue("manufacturer", input.manufacturer),
           text(input.model_name),
           text(input.notes),
           actorUserId,
         ],
       );
 
+      const afterSnapshot = await this.getEquipmentSnapshot(equipmentId, client);
+      await this.recordEquipmentHistory(client, {
+        equipmentId,
+        customerId: asset.customer_id,
+        assetId,
+        action: "CREATE",
+        afterSnapshot,
+        actorUserId,
+      });
+      await this.refreshCustomerSearchIndex(asset.customer_id, client);
       return this.getCustomerById(asset.customer_id, client);
     });
   }
@@ -1177,6 +1400,7 @@ export class CustomerService {
       if (!equipment) {
         return null;
       }
+      const beforeSnapshot = await this.getEquipmentSnapshot(equipmentId, client);
 
       const equipmentFields: Array<[string, string, (value: unknown) => string | null]> = [
         ["equipment_name", "equipment_name", (value) => text(value)],
@@ -1185,7 +1409,7 @@ export class CustomerService {
         ["installation_position", "installation_position", (value) => text(value)],
         ["engine_model_id", "engine_model_id", nullableText],
         ["gearbox_model_id", "gearbox_model_id", nullableText],
-        ["manufacturer", "manufacturer", (value) => text(value)],
+        ["manufacturer", "manufacturer", (value) => canonicalEquipmentMasterValue("manufacturer", value)],
         ["model_name", "model_name", (value) => text(value)],
         ["notes", "notes", (value) => text(value)],
       ];
@@ -1208,16 +1432,27 @@ export class CustomerService {
            where id = $1`,
           values,
         );
+        const afterSnapshot = await this.getEquipmentSnapshot(equipmentId, client);
+        await this.recordEquipmentHistory(client, {
+          equipmentId,
+          customerId: equipment.customer_id,
+          assetId: typeof beforeSnapshot.asset_id === "string" ? beforeSnapshot.asset_id : null,
+          action: "UPDATE",
+          beforeSnapshot,
+          afterSnapshot,
+          actorUserId,
+        });
       }
 
+      await this.refreshCustomerSearchIndex(equipment.customer_id, client);
       return this.getCustomerById(equipment.customer_id, client);
     });
   }
 
-  async deleteEquipment(equipmentId: string) {
+  async deleteEquipment(equipmentId: string, actorUserId?: string) {
     return withTransaction(async (client) => {
-      const equipmentResult = await client.query<{ id: string; customer_id: string }>(
-        `select id, customer_id from master.customer_equipments where id = $1`,
+      const equipmentResult = await client.query<{ id: string; customer_id: string; asset_id: string }>(
+        `select id, customer_id, asset_id from master.customer_equipments where id = $1`,
         [equipmentId],
       );
       const equipment = equipmentResult.rows[0];
@@ -1225,9 +1460,121 @@ export class CustomerService {
         return null;
       }
 
-      await client.query(`delete from master.customer_equipments where id = $1`, [equipmentId]);
+      const beforeSnapshot = await this.getEquipmentSnapshot(equipmentId, client);
+      await client.query(
+        `update master.customer_equipments
+         set deleted_at = now(),
+             deleted_by = $2,
+             updated_at = now(),
+             updated_by = $2
+         where id = $1`,
+        [equipmentId, actorUserId || null],
+      );
+      const afterSnapshot = await this.getEquipmentSnapshot(equipmentId, client);
+      await this.recordEquipmentHistory(client, {
+        equipmentId,
+        customerId: equipment.customer_id,
+        assetId: equipment.asset_id,
+        action: "DELETE",
+        beforeSnapshot,
+        afterSnapshot,
+        actorUserId,
+      });
 
+      await this.refreshCustomerSearchIndex(equipment.customer_id, client);
       return this.getCustomerById(equipment.customer_id, client);
+    });
+  }
+
+  async restoreEquipment(equipmentId: string, actorUserId: string) {
+    return withTransaction(async (client) => {
+      const equipmentResult = await client.query<{ id: string; customer_id: string; asset_id: string }>(
+        `select id, customer_id, asset_id from master.customer_equipments where id = $1`,
+        [equipmentId],
+      );
+      const equipment = equipmentResult.rows[0];
+      if (!equipment) {
+        return null;
+      }
+
+      const beforeSnapshot = await this.getEquipmentSnapshot(equipmentId, client);
+      await client.query(
+        `update master.customer_equipments
+         set deleted_at = null,
+             deleted_by = null,
+             updated_at = now(),
+             updated_by = $2
+         where id = $1`,
+        [equipmentId, actorUserId],
+      );
+      const afterSnapshot = await this.getEquipmentSnapshot(equipmentId, client);
+      await this.recordEquipmentHistory(client, {
+        equipmentId,
+        customerId: equipment.customer_id,
+        assetId: equipment.asset_id,
+        action: "RESTORE",
+        beforeSnapshot,
+        afterSnapshot,
+        actorUserId,
+      });
+      await this.refreshCustomerSearchIndex(equipment.customer_id, client);
+      return this.getCustomerById(equipment.customer_id, client);
+    });
+  }
+
+  async mergeCustomers(input: Record<string, unknown>, actorUserId: string) {
+    return withTransaction(async (client) => {
+      const keepCustomerId = text(input.keep_customer_id);
+      const mergeCustomerIds = Array.isArray(input.merge_customer_ids)
+        ? input.merge_customer_ids.map((item) => text(item)).filter((id) => id && id !== keepCustomerId)
+        : [];
+      if (!keepCustomerId || mergeCustomerIds.length === 0) {
+        return null;
+      }
+
+      const keepResult = await client.query<{ id: string; customer_name: string }>(
+        `select id, customer_name from master.customers where id = $1 and status = 'ACTIVE'`,
+        [keepCustomerId],
+      );
+      if (!keepResult.rows[0]) {
+        return null;
+      }
+
+      const mergeResult = await client.query<{ id: string; customer_name: string; snapshot: Record<string, unknown> }>(
+        `select id, customer_name, to_jsonb(master.customers.*) as snapshot
+         from master.customers
+         where id = any($1::text[])
+           and id <> $2
+           and status = 'ACTIVE'`,
+        [mergeCustomerIds, keepCustomerId],
+      );
+
+      for (const customer of mergeResult.rows) {
+        await client.query(`update master.customer_contacts set customer_id = $1, updated_at = now(), updated_by = $3 where customer_id = $2`, [keepCustomerId, customer.id, actorUserId]);
+        await client.query(`update master.customer_addresses set customer_id = $1, updated_at = now(), updated_by = $3 where customer_id = $2`, [keepCustomerId, customer.id, actorUserId]);
+        await client.query(`update master.customer_assets set customer_id = $1, updated_at = now(), updated_by = $3 where customer_id = $2`, [keepCustomerId, customer.id, actorUserId]);
+        await client.query(`update master.customer_equipments set customer_id = $1, updated_at = now(), updated_by = $3 where customer_id = $2`, [keepCustomerId, customer.id, actorUserId]);
+        await client.query(`update files.file_links set entity_id = $1 where entity_type = 'customer' and entity_id = $2`, [keepCustomerId, customer.id]);
+        await client.query(
+          `insert into master.customer_merge_history (
+             id, keep_customer_id, merged_customer_id, merged_customer_name, merged_snapshot, created_by
+           ) values ($1, $2, $3, $4, $5::jsonb, $6)`,
+          [crypto.randomUUID(), keepCustomerId, customer.id, customer.customer_name, JSON.stringify(customer.snapshot || {}), actorUserId],
+        );
+        await client.query(
+          `update master.customers
+           set status = 'INACTIVE',
+               notes = concat(notes, case when notes = '' then '' else chr(10) end, '병합됨: ', $2),
+               updated_at = now(),
+               updated_by = $3
+           where id = $1`,
+          [customer.id, keepResult.rows[0].customer_name, actorUserId],
+        );
+        await this.refreshCustomerSearchIndex(customer.id, client);
+      }
+
+      await this.refreshCustomerSearchIndex(keepCustomerId, client);
+      return this.getCustomerById(keepCustomerId, client);
     });
   }
 
@@ -1259,14 +1606,27 @@ export class CustomerService {
 
   async createEngineModel(input: Record<string, unknown>, actorUserId: string) {
     const id = crypto.randomUUID();
+    const manufacturer = canonicalEquipmentMasterValue("manufacturer", input.manufacturer);
+    const modelName = text(input.model_name);
+    const duplicate = await query<{ id: string }>(
+      `select id from master.engine_models
+       where lower(manufacturer) = lower($1)
+         and lower(model_name) = lower($2)
+       limit 1`,
+      [manufacturer, modelName],
+    );
+    if (duplicate.rows[0]) {
+      const models = await this.listEngineModels(modelName);
+      return models.find((item) => item.id === duplicate.rows[0].id) || null;
+    }
     await query(
       `insert into master.engine_models (
          id, manufacturer, model_name, engine_type, fuel_type, power_rating, notes, created_by, updated_by
        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
       [
         id,
-        text(input.manufacturer),
-        text(input.model_name),
+        manufacturer,
+        modelName,
         text(input.engine_type),
         text(input.fuel_type),
         text(input.power_rating),
@@ -1306,14 +1666,27 @@ export class CustomerService {
 
   async createGearboxModel(input: Record<string, unknown>, actorUserId: string) {
     const id = crypto.randomUUID();
+    const manufacturer = canonicalEquipmentMasterValue("manufacturer", input.manufacturer);
+    const modelName = text(input.model_name);
+    const duplicate = await query<{ id: string }>(
+      `select id from master.gearbox_models
+       where lower(manufacturer) = lower($1)
+         and lower(model_name) = lower($2)
+       limit 1`,
+      [manufacturer, modelName],
+    );
+    if (duplicate.rows[0]) {
+      const models = await this.listGearboxModels(modelName);
+      return models.find((item) => item.id === duplicate.rows[0].id) || null;
+    }
     await query(
       `insert into master.gearbox_models (
          id, manufacturer, model_name, gear_type, gear_ratio, torque_rating, notes, created_by, updated_by
        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
       [
         id,
-        text(input.manufacturer),
-        text(input.model_name),
+        manufacturer,
+        modelName,
         text(input.gear_type),
         text(input.gear_ratio),
         text(input.torque_rating),
@@ -1340,6 +1713,106 @@ export class CustomerService {
       [type],
     );
     return result.rows.map(mapEquipmentMasterOption);
+  }
+
+  async upsertEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string) {
+    const optionType = text(input.option_type || input.field);
+    const optionValue = canonicalEquipmentMasterValue(optionType, input.option_value || input.value);
+    if (!optionType || !optionValue) {
+      return null;
+    }
+
+    const id = `equipment-master-${optionType}-${optionValue.toLowerCase().replace(/[^0-9a-z]+/g, "-") || crypto.randomUUID()}`;
+    const result = await query<{
+      id: string;
+      option_type: string;
+      option_value: string;
+    }>(
+      `insert into master.equipment_master_options (id, option_type, option_value, status, created_by, updated_by)
+       values ($1, $2, $3, 'ACTIVE', $4, $4)
+       on conflict (option_type, option_value) do update
+         set status = 'ACTIVE',
+             updated_at = now(),
+             updated_by = excluded.updated_by
+       returning id, option_type, option_value`,
+      [id, optionType, optionValue, actorUserId],
+    );
+    return result.rows[0] ? mapEquipmentMasterOption(result.rows[0]) : null;
+  }
+
+  async deactivateEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string) {
+    const optionType = text(input.option_type || input.field);
+    const optionValue = canonicalEquipmentMasterValue(optionType, input.option_value || input.value);
+    if (!optionType || !optionValue) {
+      return this.listEquipmentMasterOptions(optionType);
+    }
+
+    await query(
+      `update master.equipment_master_options
+       set status = 'INACTIVE',
+           updated_at = now(),
+           updated_by = $3
+       where option_type = $1
+         and lower(option_value) = lower($2)`,
+      [optionType, optionValue, actorUserId],
+    );
+    return this.listEquipmentMasterOptions(optionType);
+  }
+
+  async mergeEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string) {
+    const optionType = text(input.option_type || input.field);
+    const fromValue = canonicalEquipmentMasterValue(optionType, input.from_value || input.value);
+    const toValue = canonicalEquipmentMasterValue(optionType, input.to_value || input.next_value);
+    if (!optionType || !fromValue || !toValue || fromValue.toLowerCase() === toValue.toLowerCase()) {
+      return this.listEquipmentMasterOptions(optionType);
+    }
+
+    return withTransaction(async (client) => {
+      await this.upsertEquipmentMasterOption({ option_type: optionType, option_value: toValue }, actorUserId);
+      const fieldColumn =
+        optionType === "equipment_unit"
+          ? "equipment_name"
+          : optionType === "equipment_type"
+            ? "equipment_type"
+            : optionType === "manufacturer"
+              ? "manufacturer"
+              : optionType === "model_name"
+                ? "model_name"
+                : "";
+      if (fieldColumn) {
+        const equipmentResult = await client.query<{ id: string; customer_id: string; asset_id: string }>(
+          `select id, customer_id, asset_id
+           from master.customer_equipments
+           where lower(${fieldColumn}) = lower($1)
+             and deleted_at is null`,
+          [fromValue],
+        );
+        for (const equipment of equipmentResult.rows) {
+          const beforeSnapshot = await this.getEquipmentSnapshot(equipment.id, client);
+          await client.query(
+            `update master.customer_equipments
+             set ${fieldColumn} = $2,
+                 updated_at = now(),
+                 updated_by = $3
+             where id = $1`,
+            [equipment.id, toValue, actorUserId],
+          );
+          const afterSnapshot = await this.getEquipmentSnapshot(equipment.id, client);
+          await this.recordEquipmentHistory(client, {
+            equipmentId: equipment.id,
+            customerId: equipment.customer_id,
+            assetId: equipment.asset_id,
+            action: "MASTER_MERGE",
+            beforeSnapshot,
+            afterSnapshot,
+            actorUserId,
+          });
+          await this.refreshCustomerSearchIndex(equipment.customer_id, client);
+        }
+      }
+      await this.deactivateEquipmentMasterOption({ option_type: optionType, option_value: fromValue }, actorUserId);
+      return this.listEquipmentMasterOptions(optionType);
+    });
   }
 
   async createFile(input: Record<string, unknown>, actorUserId: string) {

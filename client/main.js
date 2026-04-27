@@ -1012,6 +1012,7 @@ ipcMain.handle("customers:list", async (_event, search) =>
 );
 ipcMain.handle("customers:get", async (_event, customerId) => apiRequest("GET", `/api/v1/customers/${customerId}`));
 ipcMain.handle("customers:create", async (_event, payload) => apiRequest("POST", "/api/v1/customers", payload));
+ipcMain.handle("customers:merge", async (_event, payload) => apiRequest("POST", "/api/v1/customers/merge", payload));
 ipcMain.handle("customers:update", async (_event, customerId, payload) =>
   apiRequest("PATCH", `/api/v1/customers/${customerId}`, payload),
 );
@@ -1041,11 +1042,21 @@ ipcMain.handle("customers:update-equipment", async (_event, equipmentId, payload
   apiRequest("PATCH", `/api/v1/equipments/${equipmentId}`, payload),
 );
 ipcMain.handle("customers:delete-equipment", async (_event, equipmentId) => apiRequest("DELETE", `/api/v1/equipments/${equipmentId}`));
+ipcMain.handle("customers:restore-equipment", async (_event, equipmentId) => apiRequest("POST", `/api/v1/equipments/${equipmentId}/restore`));
 ipcMain.handle("master-data-requests:create", async (_event, payload) =>
   apiRequest("POST", "/api/v1/master-data-requests", payload),
 );
 ipcMain.handle("customers:list-equipment-options", async (_event, optionType) =>
   apiRequest("GET", `/api/v1/master/equipment-options${optionType ? `?option_type=${encodeURIComponent(optionType)}` : ""}`),
+);
+ipcMain.handle("customers:upsert-equipment-option", async (_event, payload) =>
+  apiRequest("POST", "/api/v1/master/equipment-options", payload),
+);
+ipcMain.handle("customers:deactivate-equipment-option", async (_event, payload) =>
+  apiRequest("PATCH", "/api/v1/master/equipment-options/deactivate", payload),
+);
+ipcMain.handle("customers:merge-equipment-option", async (_event, payload) =>
+  apiRequest("PATCH", "/api/v1/master/equipment-options/merge", payload),
 );
 ipcMain.handle("customers:list-engine-models", async (_event, search) =>
   apiRequest("GET", `/api/v1/master/engine-models${search ? `?search=${encodeURIComponent(search)}` : ""}`),

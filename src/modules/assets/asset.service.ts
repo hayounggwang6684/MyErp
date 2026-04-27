@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { query, withTransaction, type DbExecutor } from "../../shared/infrastructure/persistence/postgres.js";
-import type { AssetHistoryEntry, AssetWorkspacePayload, KnowledgeRecord, PhysicalAssetRecord } from "./asset.types.js";
+import { ASSET_CURRENCY_CODES, type AssetHistoryEntry, type AssetWorkspacePayload, type KnowledgeRecord, type PhysicalAssetRecord } from "./asset.types.js";
 
 const ASSET_PREFIX = "SJJH";
 const PURPOSE_CODES = ["COM", "CAT", "CUM", "VOL", "DOO", "SCA", "MIT"] as const;
@@ -10,15 +10,20 @@ function text(value: unknown, fallback = "") {
 }
 
 function moneyText(value: unknown) {
-  const normalized = String(value ?? "").replace(/,/g, "").trim();
+  const normalized = String(value ?? "").replace(/,/g, "").replace(/[₩$€¥원]/g, "").trim();
   if (!normalized) {
     return "";
   }
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed)) {
-    return normalized;
+    return "";
   }
   return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(2).replace(/\.00$/, "");
+}
+
+function normalizedCurrency(value: unknown) {
+  const candidate = text(value, "KRW").toUpperCase();
+  return ASSET_CURRENCY_CODES.includes(candidate as (typeof ASSET_CURRENCY_CODES)[number]) ? candidate : "KRW";
 }
 
 function isoDate(value: unknown) {
@@ -50,6 +55,7 @@ function normalizeHistoryInput(value: unknown) {
       date: text((entry as Record<string, unknown>)?.date),
       content: text((entry as Record<string, unknown>)?.content),
       cost: moneyText((entry as Record<string, unknown>)?.cost),
+      currency: normalizedCurrency((entry as Record<string, unknown>)?.currency),
     }))
     .filter((entry) => entry.date || entry.content || entry.cost);
 }
@@ -168,6 +174,7 @@ function historyEntryFromRow(row: Record<string, unknown>): AssetHistoryEntry {
     date: isoDate(row.history_date),
     content: text(row.content),
     cost: moneyText(row.cost_amount),
+    currency: normalizedCurrency(row.cost_currency),
   };
 }
 
@@ -199,6 +206,7 @@ export class AssetService {
         history_date date null,
         content text not null default '',
         cost_amount numeric(14, 2) not null default 0,
+        cost_currency text not null default 'KRW',
         created_at timestamptz not null default now(),
         created_by text null references identity.users(id) on delete set null,
         updated_at timestamptz not null default now(),
@@ -213,6 +221,7 @@ export class AssetService {
         history_date date null,
         content text not null default '',
         cost_amount numeric(14, 2) not null default 0,
+        cost_currency text not null default 'KRW',
         created_at timestamptz not null default now(),
         created_by text null references identity.users(id) on delete set null,
         updated_at timestamptz not null default now(),
@@ -235,6 +244,8 @@ export class AssetService {
       )
     `);
     await client.query(`alter table asset.knowledge_records add column if not exists hashtags text[] not null default '{}'::text[]`);
+    await client.query(`alter table asset.asset_audit_history add column if not exists cost_currency text not null default 'KRW'`);
+    await client.query(`alter table asset.asset_repair_history add column if not exists cost_currency text not null default 'KRW'`);
     await client.query(`create index if not exists idx_asset_physical_assets_deleted on asset.physical_assets(deleted_at, purpose_code, updated_at desc)`);
     await client.query(`create index if not exists idx_asset_audit_history_asset on asset.asset_audit_history(asset_id, sequence_no)`);
     await client.query(`create index if not exists idx_asset_repair_history_asset on asset.asset_repair_history(asset_id, sequence_no)`);
@@ -418,8 +429,8 @@ export class AssetService {
       for (const [index, entry] of normalizeHistoryInput(input.auditHistory).entries()) {
         await client.query(
           `insert into asset.asset_audit_history (
-             id, asset_id, sequence_no, history_date, content, cost_amount, created_by, updated_by
-           ) values ($1, $2, $3, $4::date, $5, $6::numeric, $7, $7)`,
+             id, asset_id, sequence_no, history_date, content, cost_amount, cost_currency, created_by, updated_by
+           ) values ($1, $2, $3, $4::date, $5, $6::numeric, $7, $8, $8)`,
           [
             crypto.randomUUID(),
             assetId,
@@ -427,6 +438,7 @@ export class AssetService {
             text(entry.date) || null,
             text(entry.content),
             moneyText(entry.cost) || "0",
+            normalizedCurrency(entry.currency),
             actorUserId,
           ],
         );
@@ -436,8 +448,8 @@ export class AssetService {
       for (const [index, entry] of normalizeHistoryInput(input.repairHistory).entries()) {
         await client.query(
           `insert into asset.asset_repair_history (
-             id, asset_id, sequence_no, history_date, content, cost_amount, created_by, updated_by
-           ) values ($1, $2, $3, $4::date, $5, $6::numeric, $7, $7)`,
+             id, asset_id, sequence_no, history_date, content, cost_amount, cost_currency, created_by, updated_by
+           ) values ($1, $2, $3, $4::date, $5, $6::numeric, $7, $8, $8)`,
           [
             crypto.randomUUID(),
             assetId,
@@ -445,6 +457,7 @@ export class AssetService {
             text(entry.date) || null,
             text(entry.content),
             moneyText(entry.cost) || "0",
+            normalizedCurrency(entry.currency),
             actorUserId,
           ],
         );

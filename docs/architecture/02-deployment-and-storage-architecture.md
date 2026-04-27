@@ -23,11 +23,11 @@
 
 - ERP 서버는 Mac mini 한 대에서 구동한다.
 - 관리자는 서버가 설치된 Mac mini 현지에서만 접속할 수 있다.
-- 일반 사용자는 Windows PC에 설치한 Electron 클라이언트로 접속한다.
+- 일반 사용자는 Windows 또는 macOS PC에 설치한 Electron 클라이언트로 접속한다.
 - 일반 사용자 접속은 VPN 없이 인터넷 구간을 통과할 수 있으며, [로그인 인증](../security/02-login-authentication.md) 문서 기준으로 MFA를 적용한다.
 - 주 데이터 저장소는 PostgreSQL을 사용한다.
 - 첨부 파일은 DB BLOB이 아니라 서버 로컬 파일 저장소에 보관한다.
-- Windows 클라이언트 설치 파일과 버전 배포는 GitHub Releases를 사용한다.
+- Windows 및 macOS 클라이언트 설치 파일과 버전 배포는 GitHub Releases를 사용한다.
 - 서버 코드는 Mac mini에서 직접 업데이트하고, 클라이언트는 GitHub Releases로 업데이트한다.
 
 ## 3. 물리 배치 개요
@@ -35,7 +35,7 @@
 ```mermaid
 flowchart TD
 
-U[Windows Electron 클라이언트] -->|HTTPS 443| RP[Reverse Proxy]
+U[Windows/macOS Electron 클라이언트] -->|HTTPS 443| RP[Reverse Proxy]
 GR[GitHub Releases] -->|설치 파일/업데이트| U
 M[Mac mini 로컬 관리자 브라우저] -->|127.0.0.1| ADMIN[관리자 UI/API]
 
@@ -59,7 +59,7 @@ BK --> SNAP[백업 저장 영역]
   - TLS 종료, mTLS 인증서 검증, 검증 결과 전달, 공개 라우팅 제어를 담당한다.
 - `erp-web`
   - 일반 사용자용 API와 클라이언트 연동 엔드포인트를 제공한다.
-  - Windows 설치형 클라이언트는 이 경로로만 접속한다.
+  - Windows 및 macOS 설치형 클라이언트는 이 경로로만 접속한다.
 
 ### 4.2 로컬 전용 프로세스
 
@@ -84,10 +84,10 @@ BK --> SNAP[백업 저장 영역]
 
 ```bash
 cd "/Users/glory_ai_sever/Desktop/erp porject"
-npm run start:db:local
+npm run start:db:prod
 ```
 
-- 이 명령은 로컬 PostgreSQL `sunjin_erp` DB를 사용하는 개발/초기 운영 기준 실행 방식이다.
+- 이 명령은 `HOST=127.0.0.1`과 로컬 PostgreSQL `sunjin_erp` DB를 사용하는 Mac mini 운영 기준 실행 방식이다.
 - 현재 단계에서는 Mac mini 운영자가 직접 재시작한다.
 - 향후 운영 안정화 단계에서는 `pm2` 또는 `launchd` 기반 상시 서비스로 전환한다.
 
@@ -119,7 +119,7 @@ npm run start:db:local
 
 ### 5.3 클라이언트 배포 경로
 
-- Windows 설치 파일은 GitHub Releases 아티팩트로 배포한다.
+- Windows 및 macOS 설치 파일은 GitHub Releases 아티팩트로 배포한다.
 - 클라이언트는 앱 시작 시 GitHub Releases 최신 버전을 확인한다.
 - 새 버전이 있으면 자동 다운로드 후 재시작 시 적용하는 구조를 목표로 한다.
 - 초기 배포는 무서명 내부 테스트용으로 시작하며 SmartScreen 경고 가능성을 운영 절차에 포함한다.
@@ -130,10 +130,10 @@ npm run start:db:local
 - 일반적인 패치 순서는 아래와 같다.
 
 ```bash
-git pull origin main
+git pull origin master
 npm install
 npm run db:migrate
-npm run start:db:local
+npm run start:db:prod
 ```
 
 - 서버 패치는 항상 클라이언트 릴리즈보다 먼저 수행한다.
@@ -242,7 +242,7 @@ invoice/2026/03/invoice-502/file-122-v2.pdf
 - 업로드 임시 영역과 격리 영역이 분리되는가
 - DB와 파일을 함께 복구할 수 있는 백업 체계가 준비되는가
 - 서버 패치가 Mac mini에서 수동 반영되고 있는가
-- 클라이언트 릴리즈 자산(`.exe`, `latest.yml`, blockmap)이 GitHub Releases에 함께 게시되는가
+- 클라이언트 릴리즈 자산(`.exe`, `.dmg`, `.zip`, `latest.yml`, `latest-mac.yml`, blockmap)이 GitHub Releases에 함께 게시되는가
 - GitHub Releases 설치 파일과 현재 운영 버전이 일치하는가
 
 ## 11. 향후 보완 항목

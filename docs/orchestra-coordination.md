@@ -17,6 +17,16 @@ Default agents:
 - `terminal-b`: frontend
 - `terminal-c`: test
 - `terminal-d`: ops
+- `terminal-e`: customers
+
+0.3.1 이후 작업은 전용 Git worktree에서 진행한다. `terminal-d`는 메인 프로젝트 폴더에서 지휘/검증/패키징만 담당한다.
+
+| Terminal | Area | Worktree |
+| --- | --- | --- |
+| `terminal-a` | 주문관리 | `/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-a` |
+| `terminal-b` | 공사관리 | `/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-b` |
+| `terminal-c` | 자산관리 | `/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-c` |
+| `terminal-e` | 고객관리 | `/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-e` |
 
 ## Basic Commands
 
@@ -146,5 +156,26 @@ Each terminal should periodically run:
 
 ```bash
 npm run orchestra -- orders terminal-a
+npm run orchestra -- ack terminal-a
+npm run orchestra -- title terminal-a
 npm run orchestra -- status
 ```
+
+Worker terminal startup checklist:
+
+```bash
+cd "/Users/glory_ai_sever/Desktop/erp-worktrees/terminal-a"
+npm run orchestra -- orders terminal-a
+npm run orchestra -- ack terminal-a
+npm run orchestra -- title terminal-a
+git status --short
+npm run build
+```
+
+After verification:
+
+```bash
+npm run orchestra -- done terminal-a "worktree 전환 완료, build 통과"
+```
+
+Replace `terminal-a` and the path with the terminal's assigned worktree.

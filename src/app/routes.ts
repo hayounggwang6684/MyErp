@@ -208,6 +208,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/v1/auth/logout", authController.logout);
   app.get("/api/v1/customers", customerController.listCustomers);
   app.post("/api/v1/customers", customerController.createCustomer);
+  app.post("/api/v1/customers/merge", customerController.mergeCustomers);
   app.get("/api/v1/customers/:customerId", customerController.getCustomer);
   app.patch("/api/v1/customers/:customerId", customerController.updateCustomer);
   app.patch("/api/v1/customers/:customerId/memo", customerController.updateMemo);
@@ -220,8 +221,12 @@ export function registerRoutes(app: Express) {
   app.post("/api/v1/assets/:assetId/equipments", customerController.addEquipment);
   app.patch("/api/v1/equipments/:equipmentId", customerController.updateEquipment);
   app.delete("/api/v1/equipments/:equipmentId", customerController.deleteEquipment);
+  app.post("/api/v1/equipments/:equipmentId/restore", customerController.restoreEquipment);
   app.post("/api/v1/master-data-requests", customerController.createMasterDataRequest);
   app.get("/api/v1/master/equipment-options", customerController.listEquipmentMasterOptions);
+  app.post("/api/v1/master/equipment-options", customerController.upsertEquipmentMasterOption);
+  app.patch("/api/v1/master/equipment-options/deactivate", customerController.deactivateEquipmentMasterOption);
+  app.patch("/api/v1/master/equipment-options/merge", customerController.mergeEquipmentMasterOption);
   app.get("/api/v1/master/engine-models", customerController.listEngineModels);
   app.post("/api/v1/master/engine-models", customerController.createEngineModel);
   app.get("/api/v1/master/gearbox-models", customerController.listGearboxModels);

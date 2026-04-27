@@ -19,12 +19,19 @@ function dateText(value: unknown) {
   return normalized || null;
 }
 
+function localDateText(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function isoDate(value: unknown) {
   if (!value) {
     return "";
   }
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
+    return localDateText(value);
   }
   return String(value).slice(0, 10);
 }
@@ -183,6 +190,62 @@ function isProjectOrder(order: OrderRecord) {
   );
 }
 
+function orderAuditValue(order: OrderRecord, field: string) {
+  if (field === "confirmed") {
+    return bool(order.confirmed) ? "Y" : "";
+  }
+  if (field === "confirmationDate") {
+    return text(order.confirmationDate || order.confirmation_date);
+  }
+  if (field === "businessType") {
+    return normalizeOrderType(order.businessType || order.business_type || order.requestType || order.request_type);
+  }
+  return text(order[field] || order[field.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`)]);
+}
+
+function buildOrderAuditHistory({ previousOrder, nextOrder, actorUserId, actorName }: { previousOrder: OrderRecord | null; nextOrder: OrderRecord; actorUserId: string; actorName: string }) {
+  const existingHistory = Array.isArray(previousOrder?.mergeHistory)
+    ? previousOrder?.mergeHistory
+    : Array.isArray(nextOrder.mergeHistory)
+      ? nextOrder.mergeHistory
+      : [];
+  const fields = [
+    { field: "status", label: "주문상태" },
+    { field: "confirmed", label: "수주" },
+    { field: "confirmationDate", label: "예정/확정일" },
+    { field: "description", label: "주문명" },
+    { field: "businessType", label: "주문구분" },
+    { field: "customer", label: "매출처" },
+    { field: "vessel", label: "선박" },
+    { field: "equipment", label: "엔진" },
+  ];
+  const changes = previousOrder
+    ? fields
+        .map(({ field, label }) => ({
+          field,
+          label,
+          before: orderAuditValue(previousOrder, field),
+          after: orderAuditValue(nextOrder, field),
+        }))
+        .filter((change) => change.before !== change.after)
+    : [{ field: "created", label: "주문 등록", before: "", after: text(nextOrder.description || nextOrder.id) }];
+
+  if (!changes.length) {
+    return existingHistory;
+  }
+
+  return [
+    {
+      type: previousOrder ? "order-updated" : "order-created",
+      changedAt: new Date().toISOString(),
+      userId: actorUserId,
+      user: actorName || actorUserId,
+      changes,
+    },
+    ...existingHistory,
+  ].slice(0, 100);
+}
+
 function mapOrder(row: Record<string, unknown>): OrderRecord {
   return {
     id: row.id,
@@ -217,6 +280,12 @@ function mapOrder(row: Record<string, unknown>): OrderRecord {
     mergedInto: row.merged_into_order_id || "",
     mergedAt: row.merged_at instanceof Date ? row.merged_at.toISOString() : row.merged_at || "",
     deletedAt: row.deleted_at instanceof Date ? row.deleted_at.toISOString() : row.deleted_at || "",
+    createdBy: row.created_by || "",
+    createdByName: row.created_by_name || row.created_by || "",
+    updatedBy: row.updated_by || "",
+    updatedByName: row.updated_by_name || row.updated_by || "",
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at || "",
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at || "",
   };
 }
 
@@ -304,7 +373,7 @@ export class OrderService {
       const savedOrder = await this.upsertOrder(input, actorUserId, client);
       const project = await this.syncProjectForOrder(savedOrder, actorUserId, client);
       await this.repairDuplicateManagementNumbersInDb(client);
-      const orderRow = await client.query(`select * from sales.orders where id = $1`, [text(savedOrder.id)]);
+      const orderRow = await this.getOrderByIdWith(client, text(savedOrder.id));
       const order = orderRow.rows[0] ? mapOrder(orderRow.rows[0]) : savedOrder;
       return {
         order,
@@ -362,13 +431,13 @@ export class OrderService {
         [mergeOrderIds, keepOrderId, actorUserId],
       );
 
-      const keepBeforeRepairResult = await client.query(`select * from sales.orders where id = $1`, [keepOrderId]);
+      const keepBeforeRepairResult = await this.getOrderByIdWith(client, keepOrderId);
       const keepOrderBeforeRepair = keepBeforeRepairResult.rows[0] ? mapOrder(keepBeforeRepairResult.rows[0]) : null;
       if (keepOrderBeforeRepair) {
         await this.syncProjectForOrder(keepOrderBeforeRepair, actorUserId, client);
       }
       await this.repairDuplicateManagementNumbersInDb(client);
-      const keepResult = await client.query(`select * from sales.orders where id = $1`, [keepOrderId]);
+      const keepResult = await this.getOrderByIdWith(client, keepOrderId);
       const keepOrder = keepResult.rows[0] ? mapOrder(keepResult.rows[0]) : null;
 
       return {
@@ -417,8 +486,34 @@ export class OrderService {
   }
 
   private async listOrdersWith(client: DbExecutor) {
-    const result = await client.query(`select * from sales.orders where deleted_at is null order by request_date desc, updated_at desc`);
+    const result = await client.query(`
+      select
+        o.*,
+        coalesce(nullif(created_user.name, ''), created_user.username, '') as created_by_name,
+        coalesce(nullif(updated_user.name, ''), updated_user.username, '') as updated_by_name
+      from sales.orders o
+      left join identity.users created_user on created_user.id = o.created_by
+      left join identity.users updated_user on updated_user.id = o.updated_by
+      where o.deleted_at is null
+      order by o.request_date desc, o.updated_at desc
+    `);
     return result.rows.map(mapOrder);
+  }
+
+  private async getOrderByIdWith(client: DbExecutor, orderId: string) {
+    return client.query(
+      `
+      select
+        o.*,
+        coalesce(nullif(created_user.name, ''), created_user.username, '') as created_by_name,
+        coalesce(nullif(updated_user.name, ''), updated_user.username, '') as updated_by_name
+      from sales.orders o
+      left join identity.users created_user on created_user.id = o.created_by
+      left join identity.users updated_user on updated_user.id = o.updated_by
+      where o.id = $1
+      `,
+      [orderId],
+    );
   }
 
   private async listProjectsWith(client: DbExecutor) {
@@ -440,6 +535,9 @@ export class OrderService {
     const orderId = orderIdFrom(input.id);
     const requestType = normalizeOrderType(input.requestType || input.request_type || input.businessType || input.business_type);
     const existingRows = (await client.query(`select * from sales.orders order by request_date desc, updated_at desc`)).rows.map(mapOrder);
+    const previousOrder = existingRows.find((order) => text(order.id) === orderId) || null;
+    const actorResult = await client.query(`select coalesce(nullif(name, ''), username, id) as name from identity.users where id = $1`, [actorUserId]);
+    const actorName = text(actorResult.rows[0]?.name, actorUserId);
     const candidateOrder = {
       ...input,
       id: orderId,
@@ -452,6 +550,13 @@ export class OrderService {
       mergedInto: "",
     };
     const assignedManagementNumber = assignManagementNumber(candidateOrder, existingRows);
+    candidateOrder.managementNumber = assignedManagementNumber;
+    const mergeHistory = buildOrderAuditHistory({
+      previousOrder,
+      nextOrder: candidateOrder,
+      actorUserId,
+      actorName,
+    });
     const result = await client.query(
       `insert into sales.orders (
          id, request_date, customer_id, customer_name, ship_owner, manager, buyer_type, asset_id, vessel_name,
@@ -525,7 +630,7 @@ export class OrderService {
         text(input.status, "견적"),
         assignedManagementNumber,
         JSON.stringify(input.documents || []),
-        JSON.stringify(input.mergeHistory || []),
+        JSON.stringify(mergeHistory),
         JSON.stringify(input.mergedOrderRecords || []),
         actorUserId,
       ],

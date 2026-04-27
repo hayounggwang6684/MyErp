@@ -47,7 +47,7 @@ function showAppDialog({ title = "알림", message = "", mode = "alert", default
     cancelButton.textContent = cancelLabel;
 
     const cleanup = () => {
-      document.removeEventListener("keydown", handleKeydown);
+      document.removeEventListener("keydown", handleKeydown, true);
       previousActiveElement?.focus?.();
     };
     const finish = (value) => {
@@ -59,11 +59,13 @@ function showAppDialog({ title = "알림", message = "", mode = "alert", default
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
+        event.stopImmediatePropagation?.();
         finish(mode === "confirm" ? false : mode === "prompt" ? null : true);
       }
       if (event.key === "Enter" && mode !== "alert") {
         event.preventDefault();
         event.stopPropagation();
+        event.stopImmediatePropagation?.();
         finish(mode === "prompt" ? input.value : true);
       }
     }
@@ -87,7 +89,7 @@ function showAppDialog({ title = "알림", message = "", mode = "alert", default
     panel.appendChild(actions);
     dialog.appendChild(panel);
     document.body.appendChild(dialog);
-    document.addEventListener("keydown", handleKeydown);
+    document.addEventListener("keydown", handleKeydown, true);
     (input || confirmButton).focus();
     if (input) {
       input.select();

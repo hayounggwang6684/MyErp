@@ -131,6 +131,7 @@ async function handleOrderClick(event) {
     orderState.multiSelectedOrderIds = [];
     orderState.selectedOrderId = orderId;
     orderState.draft = {};
+    orderState.detailTab = "order";
     orderState.documentAddPanelOpen = false;
     orderState.documentDraft = emptyOrderDocumentDraft();
     resetOrderLookupFilterCache("");
@@ -147,6 +148,7 @@ async function handleOrderClick(event) {
     }
     orderState.selectedOrderId = null;
     orderState.multiSelectedOrderIds = [];
+    orderState.detailTab = "order";
     orderState.draft = { confirmationDate: new Date().toISOString().slice(0, 10) };
     orderState.documentAddPanelOpen = false;
     orderState.documentDraft = emptyOrderDocumentDraft();
@@ -178,6 +180,28 @@ async function handleOrderClick(event) {
   if (orderFilterToggle) {
     const field = orderFilterToggle.dataset.orderFilterToggle || "";
     orderState.filters.activeColumn = orderState.filters.activeColumn === field ? "" : field;
+    renderOrderWorkspace();
+    return true;
+  }
+
+  const orderSortToggle = event.target.closest("[data-order-sort-toggle]");
+  if (orderSortToggle) {
+    const field = orderSortToggle.dataset.orderSortToggle || "";
+    const currentSort = orderState.sort || { field: "", direction: "asc" };
+    orderState.sort = {
+      field,
+      direction: currentSort.field === field && currentSort.direction === "asc" ? "desc" : "asc",
+    };
+    saveOrderSort(orderState.sort);
+    orderState.filters.activeColumn = "";
+    orderState.notice = orderState.sort.direction === "asc" ? "주문 목록을 오름차순으로 정렬했습니다." : "주문 목록을 내림차순으로 정렬했습니다.";
+    renderOrderWorkspace();
+    return true;
+  }
+
+  const orderDetailTab = event.target.closest("[data-order-detail-tab]");
+  if (orderDetailTab) {
+    orderState.detailTab = orderDetailTab.dataset.orderDetailTab || "order";
     renderOrderWorkspace();
     return true;
   }
@@ -718,14 +742,24 @@ async function handleOrderFormSubmit(form) {
       return true;
     }
 
+    let saveNotice = "";
     try {
       const serverResult = await window.erpClient.saveOrder(nextOrder.id, nextOrder);
+      const savedOrder = serverResult?.data?.order || null;
       applyOrderProjectServerData(serverResult?.data || {});
+      const differences = orderSaveDifferences(nextOrder, savedOrder);
+      if (differences.length) {
+        saveNotice = `서버 저장 완료. 서버 보정 ${differences.length}건이 적용됐습니다.`;
+      }
     } catch (error) {
       orderState.draft = nextOrder;
-      orderState.notice = `서버 저장 실패. 주문이 저장되지 않았습니다. ${error?.message || ""}`.trim();
+      const detail = error?.message || "알 수 없는 오류";
+      orderState.notice = "서버 저장 실패. 주문이 저장되지 않았습니다.";
       renderOrderWorkspace();
-      await showAppMessage(orderState.notice);
+      const showDetail = await requestAppConfirm(`${orderState.notice}\n상세 오류를 확인할까요?`, "주문 저장 실패");
+      if (showDetail) {
+        await showAppMessage(detail, "저장 실패 상세");
+      }
       focusOrderInput("[name='description']");
       return true;
     }
@@ -736,11 +770,12 @@ async function handleOrderFormSubmit(form) {
     ensureOrderVisibleInList(nextOrder);
     orderState.draft = {};
     orderState.notice =
-      nextOrder.confirmed && nextOrder.businessType === "공사" && !nextOrder.confirmationDate
+      saveNotice ||
+      (nextOrder.confirmed && nextOrder.businessType === "공사" && !nextOrder.confirmationDate
         ? "서버 저장 완료. 공사 예정일 미등록 알림 유지."
         : isExisting
           ? "서버에 주문 변경을 저장했습니다."
-          : "서버에 신규 주문을 저장했습니다.";
+          : "서버에 신규 주문을 저장했습니다.");
     renderOrderWorkspace();
     return true;
   }

@@ -1,4 +1,5 @@
 const PROJECT_LIST_PANE_WIDTH_STORAGE_KEY = "erp-project-list-pane-width";
+const PROJECT_QUOTATION_FORM_WIDTH_STORAGE_KEY = "erp-project-quotation-form-width";
 const PROJECT_COLUMN_ORDER_STORAGE_KEY = "erp-project-list-column-order";
 const PROJECT_COLUMN_WIDTH_STORAGE_KEY = "erp-project-list-column-widths";
 const PROJECT_QUOTATIONS_STORAGE_KEY = "erp-project-quotations";
@@ -10,10 +11,36 @@ const PROJECT_LIST_COLUMNS = [
   { field: "status", label: "상태", width: 92 },
 ];
 
+function currentProjectMonthRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const format = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  return {
+    startDate: format(start),
+    endDate: format(end),
+  };
+}
+
+function defaultProjectFilters() {
+  return {
+    ...currentProjectMonthRange(),
+    status: "",
+    manager: "",
+    query: "",
+  };
+}
+
 var projectState = {
   viewMode: "project",
   selectedProjectId: "PRJ-2026-001",
   activeDetailTab: "overview",
+  hasSearched: false,
   quotations: [],
   quotationModal: {
     open: false,
@@ -34,13 +61,7 @@ var projectState = {
     selectedTemplateId: "",
     draft: null,
   },
-  filters: {
-    startDate: "",
-    endDate: "",
-    status: "",
-    manager: "",
-    query: "",
-  },
+  filters: defaultProjectFilters(),
   projects: [
     {
       id: "PRJ-2026-001",
@@ -366,6 +387,26 @@ function projectPaneStyle() {
   return width ? `grid-template-columns: ${width}px 8px minmax(300px, 1fr);` : "";
 }
 
+function loadProjectQuotationFormWidth() {
+  const width = Number(localStorage.getItem(PROJECT_QUOTATION_FORM_WIDTH_STORAGE_KEY) || "");
+  return Number.isFinite(width) && width >= 132 ? width : 0;
+}
+
+function saveProjectQuotationFormWidth(width) {
+  if (!Number.isFinite(width) || width < 132) {
+    localStorage.removeItem(PROJECT_QUOTATION_FORM_WIDTH_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(PROJECT_QUOTATION_FORM_WIDTH_STORAGE_KEY, String(Math.round(width)));
+}
+
+function projectQuotationLayoutStyle() {
+  const width = loadProjectQuotationFormWidth();
+  return width
+    ? `grid-template-columns: ${width}px 8px minmax(0, 1fr);`
+    : "grid-template-columns: minmax(132px, 0.408fr) 8px minmax(0, 1fr);";
+}
+
 
 const PROJECT_STATUS_OPTIONS = ["견적 상태", "수주 확정", "공사 준비", "진행 중", "레포트 작성 중", "외부 의뢰 대기", "준공 대기", "준공", "보류", "취소"];
 const PROJECT_CHECKLIST_STATUS_OPTIONS = ["미시작", "진행 중", "완료", "제외"];
@@ -443,6 +484,47 @@ function blankQuotationTemplate() {
       rowHeight: 34,
     },
   };
+}
+
+function invoiceQuotationTemplatePreset() {
+  return normalizeQuotationTemplate({
+    ...blankQuotationTemplate(),
+    id: "",
+    name: "청구서 기본형",
+    defaultText: "부가세 별도 / 유효기간 30일 / 작업 조건 변경 시 별도 협의",
+    document: {
+      title: "청구서",
+      logoText: "SUNJIN",
+      tagline: "고객의 마음으로 일하는 욕·해상용 엔진/부속 공급, 수리전문점",
+      supplierName: "(주)선진종합",
+      supplierRegistrationNo: "601-81-31019",
+      supplierRepresentative: "송치관",
+      supplierAddress: "부산광역시 영도구 대평로41번길 3",
+      supplierBusinessType: "제조/선박기관 및 부품",
+      showSupplierBox: true,
+      showKoreanAmount: true,
+    },
+    styles: {
+      accentColor: "#111827",
+      fontSize: 11,
+      headerBackground: "#b7deea",
+    },
+    table: {
+      headerVisible: true,
+      rowHeight: 34,
+    },
+    items: [
+      { category: "제목", lineNo: 1, code: "", description: "조선소 작업", quantity: 0, unit: "", unitPrice: 0, amount: 0, remark: "" },
+      { category: "세부제목", lineNo: 2, code: "", description: "선체 상,하가 및 관련 일반 사항", quantity: 0, unit: "", unitPrice: 0, amount: 0, remark: "" },
+      { category: "항목설명", lineNo: 3, code: "", description: "※ G/T : 292 TON, TUG BOAT", quantity: 0, unit: "", unitPrice: 0, amount: 0, remark: "" },
+      { category: "수리항목", lineNo: 4, code: "", description: "선체 상,하가", quantity: 1, unit: "Lot", unitPrice: 7000000, amount: 7000000, remark: "" },
+      { category: "수리항목", lineNo: 5, code: "", description: "예인선 사용료", quantity: 4, unit: "척", unitPrice: 350000, amount: 1400000, remark: "" },
+      { category: "소계", lineNo: 6, code: "", description: "소계", quantity: 0, unit: "", unitPrice: 0, amount: 8400000, remark: "" },
+      { category: "빈칸", lineNo: 7, code: "", description: "", quantity: 0, unit: "", unitPrice: 0, amount: 0, remark: "" },
+      { category: "제목", lineNo: 8, code: "", description: "DOCK & OTHERS PART", quantity: 0, unit: "", unitPrice: 0, amount: 0, remark: "" },
+      { category: "수리항목", lineNo: 9, code: "", description: "우현 외판 교체작업 관련", quantity: 1, unit: "식", unitPrice: 1000000, amount: 1000000, remark: "" },
+    ],
+  });
 }
 
 function quotationNumber(project) {
@@ -1214,11 +1296,17 @@ function visibleProjects() {
 }
 
 function selectedProject() {
+  if (!projectState.hasSearched) {
+    return null;
+  }
   const projects = visibleProjects();
   return projects.find((project) => project.id === projectState.selectedProjectId) || projects[0] || null;
 }
 
 function filteredProjects() {
+  if (!projectState.hasSearched) {
+    return [];
+  }
   const query = String(projectState.filters.query || "").trim().toLowerCase();
   return visibleProjects().filter((project) => {
     if (projectState.filters.startDate && project.quoteDate < projectState.filters.startDate) {
@@ -1313,7 +1401,7 @@ function renderProjectFilters() {
       <label>기간 <input class="text-field" type="date" name="start_date" value="${escapeAttribute(projectState.filters.startDate)}" /></label>
       <label>~ <input class="text-field" type="date" name="end_date" value="${escapeAttribute(projectState.filters.endDate)}" /></label>
       <label>상태 <select class="text-field" name="status"><option value="">전체</option>${projectSelectOptions(PROJECT_STATUS_OPTIONS, projectState.filters.status)}</select></label>
-      <label class="project-filter-query">검색어 <input class="text-field" type="search" name="query" value="${escapeAttribute(projectState.filters.query)}" placeholder="관리번호 / 발주처 / 선박 / 장비 / 공사명" /></label>
+      <label class="project-filter-query">검색 <input class="text-field" type="search" name="query" value="${escapeAttribute(projectState.filters.query)}" placeholder="관리번호 / 발주처 / 선박 / 장비 / 공사명" /></label>
       <button class="secondary-button" type="submit">조회</button>
       <button class="secondary-button" type="button" data-project-filter-reset>Clear</button>
     </form>
@@ -1489,7 +1577,7 @@ function renderProjectQuotationModal() {
             <span><b>장비</b>${escapeTextarea(project?.equipment || quotation.equipment || "-")}</span>
             <span><b>공사명</b>${escapeTextarea(project?.name || quotation.title || "-")}</span>
           </div>
-          <div class="project-quotation-layout">
+          <div class="project-quotation-layout" style="${projectQuotationLayoutStyle()}">
             <aside class="project-quotation-form-grid">
               <label>템플릿 <select class="text-field" name="template_id" data-project-template-apply><option value="">선택 안 함</option>${templates.map((template) => `<option value="${escapeAttribute(template.id)}"${template.id === quotation.templateId ? " selected" : ""}>${escapeTextarea(template.name)}</option>`).join("")}</select></label>
               <label>작성일 <input class="text-field" type="date" name="created_date" value="${escapeAttribute(quotation.createdDate || "")}" /></label>
@@ -1501,6 +1589,7 @@ function renderProjectQuotationModal() {
               <label>부가세 <input class="text-field" type="number" name="vat_amount" value="${escapeAttribute(String(quotation.vatAmount || 0))}" /></label>
               <label>네고가 <input class="text-field" type="number" name="negotiated_amount" value="${escapeAttribute(String(quotation.negotiatedAmount || 0))}" /></label>
             </aside>
+            <span data-project-quotation-form-resizer title="입력 영역 폭 조절" style="display:block; min-width:8px; width:8px; cursor:col-resize; border-radius:8px; background:linear-gradient(90deg, transparent 2px, #cbd5e1 2px, #cbd5e1 6px, transparent 6px);"></span>
             <section class="project-quotation-sheet">
               <div class="project-quotation-items">
                 <div class="project-quotation-item-head"><span>구분</span><span>번호</span><span>코드</span><span>내용</span><span>수량</span><span>단위</span><span>단가</span><span>금액</span><span>remark</span></div>
@@ -1597,6 +1686,22 @@ function renderProjectTemplateCanvasPreview(template) {
   const normalized = normalizeQuotationTemplate(template);
   const infoFields = PROJECT_TEMPLATE_INFO_FIELDS.filter((field) => normalized.infoFields.includes(field.key));
   const document = normalized.document || {};
+  const previewMetaRows = [
+    ["일자", "2026년04월24일"],
+    ["수신", "삼성중공업(주) 거제조선소 귀중"],
+    ["참조", ""],
+    ["선명", "삼성 T-5"],
+    ["수주번호", "SH-202512-0401"],
+    ["SUBJECT", "선체 외판 상가 수리 작업"],
+  ];
+  const supplierRows = [
+    ["등록번호", document.supplierRegistrationNo || "601-81-31019"],
+    ["상호", document.supplierName || "(주)선진종합"],
+    ["성명", document.supplierRepresentative || "송치관"],
+    ["주소", document.supplierAddress || "부산광역시 영도구 대평로41번길 3"],
+    ["업태/종목", document.supplierBusinessType || "제조/선박기관 및 부품"],
+  ];
+  const previewRows = (normalized.items || [emptyQuotationItem()]).slice(0, 12);
   return `
     <div class="project-template-canvas${normalized.page.orientation === "portrait" ? " portrait" : ""}" style="
       --template-accent:${escapeAttribute(normalized.styles.accentColor)};
@@ -1610,42 +1715,55 @@ function renderProjectTemplateCanvasPreview(template) {
     ">
       <div class="project-template-page">
         <div class="project-template-page-inner">
-          <div class="project-template-preview-header">
-            <strong>${escapeTextarea(document.logoText || "SUNJIN")}</strong>
-            <span>${escapeTextarea(document.title || "청구서")}</span>
+          <div class="project-template-document-head">
+            <div class="project-template-brand-block">
+              <strong>${escapeTextarea(document.logoText || "SUNJIN")}</strong>
+              <small>SHERWOOD</small>
+            </div>
+            <h2>${escapeTextarea(document.title || "청구서")}</h2>
+            <div class="project-template-partner-logos">STX · PULLMASTER</div>
           </div>
-          <div style="text-align:right; font-size:10px; margin-bottom:6px;">${escapeTextarea(document.tagline || "")}</div>
-          <div class="project-template-preview-info">
-            ${infoFields.map((field) => `<span><b>${escapeTextarea(field.label)}</b><i>매핑</i></span>`).join("")}
-            ${document.showSupplierBox ? `<span><b>공급자</b><i>${escapeTextarea(document.supplierName || "-")}</i></span>` : ""}
+          <div class="project-template-tagline">${escapeTextarea(document.tagline || "")}</div>
+          <div class="project-template-preview-top">
+            <div class="project-template-meta-table">
+              ${previewMetaRows.map(([label, value]) => `<span class="project-template-meta-label">${escapeTextarea(label)}</span><span>${escapeTextarea(value)}</span>`).join("")}
+            </div>
+            ${
+              document.showSupplierBox
+                ? `<div class="project-template-supplier-table"><b>공급자</b>${supplierRows.map(([label, value]) => `<span>${escapeTextarea(label)}</span><i>${escapeTextarea(value)}</i>`).join("")}</div>`
+                : ""
+            }
+          </div>
+          <div class="project-template-amount-line">
+            <span>합계금액</span>
+            <strong>${document.showKoreanAmount ? "일금사천오백육십구만육천원정" : ""}</strong>
+            <b>₩45,696,000</b>
           </div>
           <div class="project-template-preview-table">
             ${
               normalized.table.headerVisible
-                ? `<div class="project-template-preview-table-head"><span>구분</span><span>번호</span><span>코드</span><span>내용</span><span>수량</span><span>단위</span><span>단가</span><span>금액</span><span>remark</span></div>`
+                ? `<div class="project-template-preview-table-head"><span>NO</span><span>PART.NO</span><span>D E S C R I P T I O N</span><span>Q'TY</span><span>U/PRICE</span><span>AMOUNT</span></div>`
                 : ""
             }
-            ${(normalized.items || [emptyQuotationItem()]).slice(0, 4).map((item, index) => {
+            ${previewRows.map((item, index) => {
               const normalizedItem = normalizeQuotationItem(item, index);
               const priced = isQuotationPricedItem(normalizedItem);
+              const rowKind = quotationItemPrintClass(normalizedItem);
               return `
-                <div class="project-template-preview-table-row">
+                <div class="project-template-preview-table-row ${rowKind}">
                   <span>${escapeTextarea(normalizedItem.category || "수리항목")}</span>
-                  <span>${escapeTextarea(String(index + 1))}</span>
-                  <span>${escapeTextarea(normalizedItem.code || "CODE")}</span>
                   <span>${escapeTextarea(normalizedItem.description || "작업 내용 표시 영역")}</span>
                   <span>${priced ? escapeTextarea(String(normalizedItem.quantity || 1)) : ""}</span>
                   <span>${escapeTextarea(normalizedItem.unit || "EA")}</span>
                   <span>${priced ? escapeTextarea(String(normalizedItem.unitPrice || 0)) : ""}</span>
                   <span>${priced ? escapeTextarea(String(normalizedItem.amount || 0)) : ""}</span>
-                  <span>${escapeTextarea(normalizedItem.remark || "-")}</span>
                 </div>
               `;
             }).join("")}
           </div>
           <div class="project-template-preview-footer">
-            <div>${escapeTextarea(normalized.defaultText || "하단 문구 / 비고 / 결제 조건")}</div>
-            <div>PDF / XLS 출력</div>
+            <div>${escapeTextarea(normalized.defaultText || "부가세 별도 / 작업 조건 변경 시 별도 협의")}</div>
+            <div>${infoFields.length}개 정보 필드 매핑</div>
           </div>
         </div>
       </div>
@@ -1663,7 +1781,7 @@ function renderProjectTemplateModal() {
     <div class="project-modal-backdrop">
       <section class="project-modal project-template-modal" role="dialog" aria-modal="true">
         <header class="project-modal-header">
-          <h3>견적서 템플릿 관리</h3>
+          <h3>문서 양식 디자이너</h3>
           <button type="button" class="ghost-button" data-project-template-close>닫기</button>
         </header>
         <div class="project-template-layout">
@@ -1673,10 +1791,11 @@ function renderProjectTemplateModal() {
                 <strong>템플릿</strong>
                 <button type="button" class="secondary-button" data-project-template-new>신규</button>
               </div>
+              <button type="button" class="project-template-preset-button" data-project-template-preset="invoice">청구서 기본형 불러오기</button>
               <div class="project-template-current">
                 <span>현재 선택</span>
                 <strong>${escapeTextarea(draft.name || "새 템플릿")}</strong>
-                <small>${draft.page.orientation === "portrait" ? "A4 세로" : "A4 가로"} / HTML-CSS 원본 / PDF-XLS 출력</small>
+                <small>${draft.page.orientation === "portrait" ? "A4 세로" : "A4 가로"} / ${draft.document.title || "문서"} / ${draft.items.length}개 기본 행</small>
               </div>
               <div class="project-template-list">
                 ${templates.map((template) => `<button type="button" class="project-template-row${template.id === draft.id ? " active" : ""}" data-project-template-select="${escapeAttribute(template.id)}">${escapeTextarea(template.name || "이름 없음")}</button>`).join("") || '<div class="project-empty">저장된 템플릿 없음</div>'}
@@ -1684,8 +1803,21 @@ function renderProjectTemplateModal() {
             </section>
             <section class="project-template-sidebar-section">
               <div class="project-template-sidebar-header">
-                <strong>정보 영역</strong>
-                <span>필드 팔레트</span>
+                <strong>설계 영역</strong>
+                <span>빠른 이동</span>
+              </div>
+              <div class="project-template-designer-nav">
+                <span>문서</span>
+                <span>상단</span>
+                <span>공급자</span>
+                <span>정보표</span>
+                <span>품목표</span>
+              </div>
+            </section>
+            <section class="project-template-sidebar-section">
+              <div class="project-template-sidebar-header">
+                <strong>매핑 필드</strong>
+                <span>출력 정보</span>
               </div>
               <div class="project-template-field-palette">
                 ${renderProjectTemplateFieldPalette(draft.infoFields)}
@@ -1695,17 +1827,18 @@ function renderProjectTemplateModal() {
           <section class="project-template-preview-pane">
             <div class="project-template-preview-header-bar">
               <div class="project-template-preview-title">
-                <strong>A4 템플릿 캔버스</strong>
-                <small>문서 편집 결과를 중앙에서 바로 확인</small>
+                <strong>실시간 출력 미리보기</strong>
+                <small>청구서 상단 정보표, 공급자 박스, 품목표를 실제 문서 비율로 확인</small>
               </div>
-              <span>출력: PDF / XLS</span>
+              <span>${draft.page.orientation === "portrait" ? "A4 세로" : "A4 가로"}</span>
             </div>
             ${renderProjectTemplateCanvasPreview(draft)}
           </section>
           <form id="project-template-form" class="project-template-form">
             <input type="hidden" name="template_id" value="${escapeAttribute(draft.id || "")}" />
             <section class="project-template-section">
-              <h4>속성</h4>
+              <h4>문서 기본</h4>
+              <p>문서명, 용지 방향, 출력 제목을 정합니다.</p>
               <div class="project-template-grid two">
                 <label>템플릿명 <input class="text-field" name="template_name" value="${escapeAttribute(draft.name || "")}" /></label>
                 <label>문서 제목 <input class="text-field" name="document_title" value="${escapeAttribute(draft.document.title || "")}" /></label>
@@ -1719,9 +1852,16 @@ function renderProjectTemplateModal() {
             </section>
             <section class="project-template-section">
               <h4>상단 양식</h4>
+              <p>로고 텍스트와 문서 상단 안내 문구를 설정합니다.</p>
               <div class="project-template-grid two">
                 <label>로고 텍스트 <input class="text-field" name="logo_text" value="${escapeAttribute(draft.document.logoText || "")}" /></label>
                 <label>상단 문구 <input class="text-field" name="tagline" value="${escapeAttribute(draft.document.tagline || "")}" /></label>
+              </div>
+            </section>
+            <section class="project-template-section">
+              <h4>공급자 박스</h4>
+              <p>기존 청구서 오른쪽 공급자 정보표에 들어갈 내용을 관리합니다.</p>
+              <div class="project-template-grid two">
                 <label>공급자 상호 <input class="text-field" name="supplier_name" value="${escapeAttribute(draft.document.supplierName || "")}" /></label>
                 <label>등록번호 <input class="text-field" name="supplier_registration_no" value="${escapeAttribute(draft.document.supplierRegistrationNo || "")}" /></label>
                 <label>대표자 <input class="text-field" name="supplier_representative" value="${escapeAttribute(draft.document.supplierRepresentative || "")}" /></label>
@@ -1739,6 +1879,7 @@ function renderProjectTemplateModal() {
             </section>
             <section class="project-template-section">
               <h4>여백</h4>
+              <p>A4 출력 시 페이지 안쪽 여백입니다.</p>
               <div class="project-template-grid two">
                 <label>상단 여백(mm) <input class="text-field" type="number" name="margin_top" value="${escapeAttribute(String(draft.page.marginTop))}" /></label>
                 <label>우측 여백(mm) <input class="text-field" type="number" name="margin_right" value="${escapeAttribute(String(draft.page.marginRight))}" /></label>
@@ -1747,7 +1888,8 @@ function renderProjectTemplateModal() {
               </div>
             </section>
             <section class="project-template-section">
-              <h4>스타일</h4>
+              <h4>품목표 스타일</h4>
+              <p>테이블 헤더 색상, 행 높이, 기본 글자 크기를 조정합니다.</p>
               <div class="project-template-grid two">
                 <label>강조색 <input class="text-field project-template-color" type="color" name="accent_color" value="${escapeAttribute(draft.styles.accentColor)}" /></label>
                 <label>헤더 배경색 <input class="text-field project-template-color" type="color" name="header_background" value="${escapeAttribute(draft.styles.headerBackground)}" /></label>
@@ -1761,12 +1903,14 @@ function renderProjectTemplateModal() {
             </section>
             <section class="project-template-section">
               <h4>정보 영역 매핑</h4>
+              <p>상단 정보표에 표시할 값을 선택합니다.</p>
               <div class="project-template-checkbox-grid">
                 ${renderProjectTemplateInfoFieldOptions(draft.infoFields)}
               </div>
             </section>
             <section class="project-template-section">
               <h4>출력 문구와 기본 행</h4>
+              <p>행은 구분 | 내용 | 단위 | 수량 | 단가 | remark 순서로 입력합니다.</p>
               <label>기본 문구 <textarea class="text-area" name="default_text">${escapeTextarea(draft.defaultText || "")}</textarea></label>
               <label>기본 항목 목록 <textarea class="text-area" name="default_items" placeholder="구분 | 내용 | 단위 | 수량 | 단가 | remark">${escapeTextarea((draft.items || []).map((item, index) => {
                 const normalizedItem = normalizeQuotationItem(item, index);

@@ -1,9 +1,10 @@
 const ORDER_COLUMN_WIDTH_STORAGE_KEY = "erp-order-list-column-widths";
 const ORDER_LIST_PANE_WIDTH_STORAGE_KEY = "erp-order-list-pane-width";
 const ORDER_COLUMN_ORDER_STORAGE_KEY = "erp-order-list-column-order";
+const ORDER_SORT_STORAGE_KEY = "erp-order-list-sort";
 const ORDER_CUSTOMER_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const ORDER_LOOKUP_CACHE_MAX = 40;
-const DEFAULT_ORDER_COLUMN_WIDTHS = [92, 132, 116, 82, 58, 220, 96, 112, 128];
+const DEFAULT_ORDER_COLUMN_WIDTHS = [92, 132, 116, 82, 58, 220, 96, 112, 128, 96, 96];
 const ORDER_TYPES = ["공사", "판매"];
 const ORDER_STATUS_STAGES = {
   공사: ["견적", "발주", "공사중", "준공", "청구", "완공"],
@@ -19,6 +20,8 @@ const ORDER_LIST_COLUMNS = [
   { field: "status", label: "상태" },
   { field: "id", label: "주문ID" },
   { field: "managementNumber", label: "공사ID" },
+  { field: "createdByName", label: "등록자" },
+  { field: "updatedByName", label: "수정자" },
 ];
 
 function currentOrderMonthRange() {
@@ -37,6 +40,27 @@ function currentOrderMonthRange() {
     startDate: format(start),
     endDate: format(end),
   };
+}
+
+function orderTodayDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function orderDateOnly(value = "") {
+  if (!value) {
+    return "";
+  }
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  return String(value).slice(0, 10);
 }
 
 function parseOrderSequenceId(value = "") {
@@ -140,6 +164,9 @@ let orderState = {
     query: "",
     columns: {},
     activeColumn: "",
+  },
+  sort: {
+    ...loadOrderSort(),
   },
   draft: {},
   orders: [
@@ -452,7 +479,7 @@ function orderFromForm(form) {
   const orderType = normalizeOrderType(data.request_type || data.business_type || "공사");
   const order = {
     id: data.order_id || "",
-    requestDate: data.request_date || new Date().toISOString().slice(0, 10),
+    requestDate: data.request_date || orderTodayDate(),
     customer: data.customer || "",
     customerId: data.customer_id || orderState.customerLookup.selectedCustomerId || "",
     shipOwner: data.ship_owner || data.customer || "",
@@ -493,7 +520,7 @@ function filteredOrders() {
   const end = orderState.filters.endDate || "";
   const query = String(orderState.filters.query || "").trim().toLowerCase();
   const columnFilters = orderState.filters.columns || {};
-  return orderState.orders.filter((order) => !order.mergedInto && !order.deletedAt).filter((order) => {
+  const filtered = orderState.orders.filter((order) => !order.mergedInto && !order.deletedAt).filter((order) => {
     const date = order.requestDate || "";
     const values = orderListValues(order);
     const matchesDate = (!start || date >= start) && (!end || date <= end);
@@ -504,6 +531,7 @@ function filteredOrders() {
     });
     return matchesDate && matchesQuery && matchesColumns;
   });
+  return sortedOrders(filtered);
 }
 
 async function deleteOrders(orderIds = []) {
@@ -584,12 +612,124 @@ function orderListValue(order, field) {
     status: order.status || "",
     id: order.id || "",
     managementNumber: order.managementNumber && order.managementNumber !== "확정 후 발급" ? order.managementNumber : "",
+    createdByName: order.createdByName || order.createdBy || "",
+    updatedByName: order.updatedByName || order.updatedBy || "",
   };
   return mapping[field] || "";
 }
 
 function orderListValues(order) {
   return ORDER_LIST_COLUMNS.map((column) => String(orderListValue(order, column.field)));
+}
+
+function orderCurrentUserName() {
+  const user = dashboardState?.session?.data?.user || {};
+  return user.name || user.displayName || user.username || "시연 사용자";
+}
+
+function loadOrderSort() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ORDER_SORT_STORAGE_KEY) || "{}");
+    const validFields = new Set(ORDER_LIST_COLUMNS.map((column) => column.field));
+    return {
+      field: validFields.has(saved.field) ? saved.field : "",
+      direction: saved.direction === "desc" ? "desc" : "asc",
+    };
+  } catch {
+    return { field: "", direction: "asc" };
+  }
+}
+
+function saveOrderSort(sort) {
+  const validFields = new Set(ORDER_LIST_COLUMNS.map((column) => column.field));
+  if (!sort?.field || !validFields.has(sort.field)) {
+    localStorage.removeItem(ORDER_SORT_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(ORDER_SORT_STORAGE_KEY, JSON.stringify({ field: sort.field, direction: sort.direction === "desc" ? "desc" : "asc" }));
+}
+
+function sortedOrders(orders = []) {
+  const field = orderState.sort?.field || "";
+  if (!field) {
+    return orders;
+  }
+  const direction = orderState.sort?.direction === "desc" ? -1 : 1;
+  return [...orders].sort((left, right) => {
+    const leftValue = String(orderListValue(left, field)).trim();
+    const rightValue = String(orderListValue(right, field)).trim();
+    if (!leftValue && rightValue) {
+      return 1;
+    }
+    if (leftValue && !rightValue) {
+      return -1;
+    }
+    return leftValue.localeCompare(rightValue, "ko", { numeric: true, sensitivity: "base" }) * direction;
+  });
+}
+
+function orderSortArrow(field) {
+  if (orderState.sort?.field !== field) {
+    return "↕";
+  }
+  return orderState.sort.direction === "desc" ? "↓" : "↑";
+}
+
+function orderSaveDifferences(inputOrder, savedOrder) {
+  if (!inputOrder || !savedOrder) {
+    return [];
+  }
+  return [
+    { field: "managementNumber", label: "관리번호" },
+    { field: "status", label: "주문상태" },
+    { field: "confirmed", label: "수주" },
+    { field: "confirmationDate", label: "예정/확정일" },
+    { field: "businessType", label: "주문구분" },
+  ]
+    .map(({ field, label }) => ({
+      label,
+      before: String(inputOrder[field] ?? ""),
+      after: String(savedOrder[field] ?? ""),
+    }))
+    .filter((item) => item.before !== item.after);
+}
+
+function orderHistoryRows(order) {
+  return (order?.mergeHistory || []).filter((entry) => entry && (entry.type === "order-created" || entry.type === "order-updated" || entry.type === "merge"));
+}
+
+function renderOrderAuditPanel(order) {
+  const rows = orderHistoryRows(order);
+  if (!order?.id) {
+    return '<div class="order-empty-cell">저장된 주문을 선택하면 변경 이력이 표시됩니다.</div>';
+  }
+  if (!rows.length) {
+    return '<div class="order-empty-cell">변경 이력이 없습니다.</div>';
+  }
+  return `
+    <section class="order-doc-panel">
+      <div class="order-doc-title"><strong>변경 이력</strong></div>
+      <div class="order-merge-preview">
+        ${rows
+          .map((entry) => {
+            const changes = Array.isArray(entry.changes) ? entry.changes : [];
+            const summary = changes.length
+              ? changes.map((change) => `${change.label || change.field}: ${change.before || "-"} -> ${change.after || "-"}`).join(" / ")
+              : entry.keepOrderId
+                ? `주문 병합: ${entry.mergedOrderIds?.join(", ") || ""}`
+                : "변경 내용 없음";
+            return `
+              <div class="order-merge-preview-row">
+                <span>${escapeTextarea(orderDateOnly(entry.changedAt || entry.mergedAt || ""))}</span>
+                <span>${escapeTextarea(entry.user || entry.userId || "-")}</span>
+                <span>${escapeTextarea(summary)}</span>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </section>
+  `;
 }
 
 function orderListColumns() {
@@ -1002,10 +1142,15 @@ function renderOrderListGrid() {
             ${columns.map(
               (column, index) => `
                 <div class="order-resizable-th" draggable="true" data-order-column-field="${escapeAttribute(column.field)}" title="드래그해서 위치 변경">
-                  <button type="button" class="order-header-filter${orderState.filters.columns?.[column.field] ? " active" : ""}" data-order-filter-toggle="${escapeAttribute(column.field)}">
-                    <span>${escapeTextarea(column.label)}</span>
-                    <span aria-hidden="true">▾</span>
-                  </button>
+                  <div class="order-header-tools">
+                    <button type="button" class="order-header-sort${orderState.sort?.field === column.field ? " active" : ""}" data-order-sort-toggle="${escapeAttribute(column.field)}" title="클릭해서 오름차순/내림차순 정렬">
+                      <span>${escapeTextarea(column.label)}</span>
+                      <span aria-hidden="true">${orderSortArrow(column.field)}</span>
+                    </button>
+                    <button type="button" class="order-header-filter${orderState.filters.columns?.[column.field] ? " active" : ""}" data-order-filter-toggle="${escapeAttribute(column.field)}" aria-label="${escapeAttribute(column.label)} 필터" title="필터">
+                      <span aria-hidden="true">▾</span>
+                    </button>
+                  </div>
                   ${renderOrderColumnFilterMenu(column)}
                   <span class="order-column-resizer" data-order-column-resizer="${index}"></span>
                 </div>
@@ -1078,7 +1223,7 @@ function orderPaneStyle() {
 
 
 function renderOrderDetailPanel(order) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = orderTodayDate();
   const current = {
     id: "",
     requestDate: today,
@@ -1121,6 +1266,10 @@ function renderOrderDetailPanel(order) {
   current.requestType = normalizeOrderType(current.requestType || current.businessType);
   current.businessType = normalizeOrderType(current.businessType || current.requestType);
   current.status = orderStatusFor(current);
+  const createdByName = current.createdByName || (current.id ? current.createdBy || "" : orderCurrentUserName());
+  const updatedByName = current.updatedByName || current.updatedBy || "-";
+  const createdDate = orderDateOnly(current.createdAt || current.requestDate);
+  const updatedDate = orderDateOnly(current.updatedAt || current.requestDate || today);
   const scheduleLabel = current.requestType === "공사" ? "예정일" : "확정일";
   const scheduleWarning =
     current.confirmed && current.requestType === "공사" && !current.confirmationDate
@@ -1150,10 +1299,10 @@ function renderOrderDetailPanel(order) {
             <label>${scheduleLabel} <input class="text-field" type="date" name="confirmation_date" value="${escapeAttribute(current.confirmationDate || today)}" data-order-confirmation-date title="휠: 일 변경, Shift+휠: 월 변경, Option+휠: 연도 변경" /></label>
             ${scheduleWarning}
             <label class="order-wide-field">비고 <textarea class="text-area" name="notes">${escapeTextarea(current.notes || "")}</textarea></label>
-            <label>등록일시 <input class="text-field" value="${escapeAttribute(current.requestDate)}" readonly /></label>
-            <label>등록자 <input class="text-field" value="시연 사용자" readonly /></label>
-            <label>수정일시 <input class="text-field" value="${escapeAttribute(today)}" readonly /></label>
-            <label>수정자 <input class="text-field" value="-" readonly /></label>
+            <label>등록일시 <input class="text-field" value="${escapeAttribute(createdDate)}" readonly /></label>
+            <label>등록자 <input class="text-field" value="${escapeAttribute(createdByName)}" readonly /></label>
+            <label>수정일시 <input class="text-field" value="${escapeAttribute(updatedDate)}" readonly /></label>
+            <label>수정자 <input class="text-field" value="${escapeAttribute(updatedByName)}" readonly /></label>
           </div>
           <input type="hidden" name="request_date" value="${escapeAttribute(current.requestDate)}" />
           <input type="hidden" name="request_channel" value="${escapeAttribute(current.requestChannel)}" />
@@ -1174,13 +1323,15 @@ function renderOrderDetailPanel(order) {
 }
 
 function renderOrderRightPanel(order) {
+  const activeTab = orderState.detailTab || "order";
   return `
     <section class="order-grid-panel order-detail-panel">
       <div class="order-detail-tabs">
-        <button type="button" class="order-detail-tab active">주문 내역</button>
+        <button type="button" class="order-detail-tab${activeTab === "order" ? " active" : ""}" data-order-detail-tab="order">주문 내역</button>
+        <button type="button" class="order-detail-tab${activeTab === "history" ? " active" : ""}" data-order-detail-tab="history">변경 이력</button>
       </div>
       <div class="order-detail-scroll">
-        ${renderOrderDetailPanel(order)}
+        ${activeTab === "history" ? renderOrderAuditPanel(order) : renderOrderDetailPanel(order)}
       </div>
       ${renderOrderDocumentDetailDialog()}
     </section>
@@ -1453,7 +1604,7 @@ function mergeOrders({ keepOrderId, mergeOrderIds }) {
   }
 
   const mergedAt = new Date().toISOString();
-  const user = dashboardState.session?.data?.user?.username || dashboardState.session?.data?.user?.displayName || "시연 사용자";
+  const user = orderCurrentUserName();
   const mergeResult = mergeOrderDocumentsForKeepOrder(keepOrder.id, orderDocumentsFor(keepOrder), sourceOrders);
   const history = {
     mergedAt,

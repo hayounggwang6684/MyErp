@@ -337,12 +337,66 @@ export class CustomerController {
       return;
     }
 
-    const detail = await customerService.deleteEquipment(String(request.params.equipmentId || ""));
+    const detail = await customerService.deleteEquipment(String(request.params.equipmentId || ""), session.user.id);
     if (!detail) {
       sendJson(response, 404, {
         success: false,
         errorCode: "EQUIPMENT_NOT_FOUND",
         message: "장비 정보를 찾을 수 없습니다.",
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      success: true,
+      data: detail,
+    });
+  };
+
+  restoreEquipment = async (request: Request, response: Response) => {
+    const session = await requireCustomerSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "CUSTOMER_MANAGE_REQUIRED",
+        message: "고객관리 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    const detail = await customerService.restoreEquipment(String(request.params.equipmentId || ""), session.user.id);
+    if (!detail) {
+      sendJson(response, 404, {
+        success: false,
+        errorCode: "EQUIPMENT_NOT_FOUND",
+        message: "장비 정보를 찾을 수 없습니다.",
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      success: true,
+      data: detail,
+    });
+  };
+
+  mergeCustomers = async (request: Request, response: Response) => {
+    const session = await requireCustomerSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "CUSTOMER_MANAGE_REQUIRED",
+        message: "고객관리 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    const detail = await customerService.mergeCustomers(request.body || {}, session.user.id);
+    if (!detail) {
+      sendJson(response, 400, {
+        success: false,
+        errorCode: "CUSTOMER_MERGE_INVALID",
+        message: "병합할 고객 정보를 확인하세요.",
       });
       return;
     }
@@ -391,6 +445,60 @@ export class CustomerController {
     }
 
     const data = await customerService.listEquipmentMasterOptions(String(request.query.option_type || ""));
+    sendJson(response, 200, {
+      success: true,
+      data,
+    });
+  };
+
+  upsertEquipmentMasterOption = async (request: Request, response: Response) => {
+    const session = await requireCustomerSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "CUSTOMER_MANAGE_REQUIRED",
+        message: "고객관리 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    const data = await customerService.upsertEquipmentMasterOption(request.body || {}, session.user.id);
+    sendJson(response, 201, {
+      success: true,
+      data,
+    });
+  };
+
+  deactivateEquipmentMasterOption = async (request: Request, response: Response) => {
+    const session = await requireCustomerSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "CUSTOMER_MANAGE_REQUIRED",
+        message: "고객관리 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    const data = await customerService.deactivateEquipmentMasterOption(request.body || {}, session.user.id);
+    sendJson(response, 200, {
+      success: true,
+      data,
+    });
+  };
+
+  mergeEquipmentMasterOption = async (request: Request, response: Response) => {
+    const session = await requireCustomerSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "CUSTOMER_MANAGE_REQUIRED",
+        message: "고객관리 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    const data = await customerService.mergeEquipmentMasterOption(request.body || {}, session.user.id);
     sendJson(response, 200, {
       success: true,
       data,

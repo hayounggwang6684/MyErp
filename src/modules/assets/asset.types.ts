@@ -1,9 +1,12 @@
+export const ASSET_CURRENCY_CODES = ["KRW", "USD", "EUR", "JPY", "CNY"] as const;
+
 export type AssetHistoryEntry = {
   id: string;
   sequence: number;
   date: string;
   content: string;
   cost: string;
+  currency: string;
 };
 
 export type PhysicalAssetRecord = {

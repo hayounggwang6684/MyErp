@@ -23,6 +23,7 @@ export type CustomerSummary = {
   assetCount: number;
   equipmentCount: number;
   duplicateHints: string[];
+  matchHint?: string | null;
   updatedAt: string;
 };
 
@@ -81,7 +82,32 @@ export type CustomerEquipment = {
   manufacturer: string;
   modelName: string;
   notes: string;
+  createdByName: string | null;
+  updatedByName: string | null;
+  deletedAt: string | null;
   updatedAt: string;
+};
+
+export type CustomerEquipmentHistory = {
+  id: string;
+  equipmentId: string;
+  customerId: string;
+  assetId: string | null;
+  action: string;
+  beforeSnapshot: Record<string, unknown>;
+  afterSnapshot: Record<string, unknown>;
+  createdAt: string;
+  createdByName: string | null;
+};
+
+export type CustomerMergeHistory = {
+  id: string;
+  keepCustomerId: string;
+  mergedCustomerId: string;
+  mergedCustomerName: string;
+  mergedSnapshot: Record<string, unknown>;
+  createdAt: string;
+  createdByName: string | null;
 };
 
 export type EngineModel = {
@@ -156,4 +182,6 @@ export type CustomerDetail = {
   assets: Array<CustomerAsset & { equipments: CustomerEquipment[] }>;
   files: FileRecord[];
   latestExtraction: BusinessLicenseExtraction | null;
+  mergeHistory: CustomerMergeHistory[];
+  equipmentHistory: CustomerEquipmentHistory[];
 };

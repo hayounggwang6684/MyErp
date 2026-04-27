@@ -174,17 +174,17 @@ git pull
 Mac mini 서버 반영 전에는 아래 순서로 점검한다.
 
 ```bash
-git pull origin main
+git pull origin master
 npm install
 npm run db:migrate
-npm run start:db:local
+npm run start:db:prod
 ```
 
 검증 항목:
 
 - 서버가 PostgreSQL 연결 상태로 정상 기동되는가
 - 로그인, MFA 등록, MFA 검증 API가 정상 동작하는가
-- 기존 Windows 클라이언트가 새 서버와 호환되는가
+- 기존 Windows/macOS 클라이언트가 새 서버와 호환되는가
 
 원칙:
 
@@ -193,33 +193,34 @@ npm run start:db:local
 
 ---
 
-### Step 8. main 브랜치 병합
+### Step 8. master 브랜치 병합
 
-테스트 PC에서 정상 작동이 확인되면 main 브랜치에 병합한다.
+테스트 PC에서 정상 작동이 확인되면 `master` 브랜치에 병합한다.
 
 ```bash
-git checkout main
+git checkout master
 git merge codex/<feature-name>
-git push origin main
+git push origin master
 ```
 
 ---
 
 ### Step 9. 클라이언트 릴리즈 게시
 
-main 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트와 Mac mini용 macOS 설치형 클라이언트를 새 버전으로 배포한다.
+`master` 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트와 Mac mini용 macOS 설치형 클라이언트를 새 버전으로 배포한다. 0.3.1 기준 운영 릴리즈는 `v0.3.1` 태그와 GitHub Release `0.3.1` 제목을 사용한다.
 
 클라이언트 배포 순서:
 
-1. Windows 빌드 PC에서 최신 `main` 가져오기
+1. 최신 `master` 가져오기
 2. `package.json`의 `version`을 다음 패치 버전으로 올리기
 3. `package-lock.json`의 상단 버전 정보도 함께 맞추기
 4. `npm install`
 5. 릴리즈용 커밋 생성
 6. Windows 자산은 `npm run client:dist` 또는 `npm run client:release`로 생성한다.
-7. macOS 자산은 `npm run client:dist:mac` 또는 `npm run client:release:mac`로 생성한다.
-8. 생성된 설치 파일과 업데이트 메타데이터(`latest.yml`, `latest-mac.yml`, 관련 blockmap 파일)를 GitHub Releases에 게시한다.
-9. 설치된 클라이언트가 앱 시작 시 새 릴리즈를 감지하는지 확인한다.
+7. macOS 자산은 일반 배포 시 `npm run client:dist:mac` 또는 `npm run client:release:mac`로 생성한다.
+8. Mac mini 로컬 검증/수동 업로드용 macOS 자산은 `npm run client:dist:mac:local`로 생성하고 `dist/mac` 산출물을 확인한다.
+9. 생성된 설치 파일과 업데이트 메타데이터(`latest.yml`, `latest-mac.yml`, 관련 blockmap 파일)를 GitHub Releases에 게시한다.
+10. 설치된 클라이언트가 앱 시작 시 새 릴리즈를 감지하는지 확인한다.
 
 원칙:
 
@@ -231,13 +232,13 @@ main 기준 서버 검증이 끝난 뒤 Windows 설치형 클라이언트와 Mac
 클라이언트 패치 버전 기준:
 
 - UI 수정, 로그인 흐름 보완, 자동 업데이트 보완 같은 하위 호환 변경은 패치 버전으로 올린다.
-- 예: `0.1.0` -> `0.1.1`
+- 예: `0.3.0` -> `0.3.1`
 
 권장 릴리즈 절차 예시:
 
 ```bash
-git checkout main
-git pull origin main
+git checkout master
+git pull origin master
 npm install
 ```
 
@@ -245,8 +246,31 @@ npm install
 
 ```bash
 git add -A
-git commit -m "release: v0.1.1"
-git push origin main
+git commit -m "release: v0.3.1"
+git push origin master
+```
+
+macOS 로컬 패키징:
+
+```bash
+npm run client:dist:mac:local
+ls -lh dist/mac
+```
+
+GitHub Release 수동 게시 예시:
+
+```bash
+git tag v0.3.1
+git push origin v0.3.1
+gh release create v0.3.1 \
+  "dist/mac/Sunjin ERP-0.3.1-universal.dmg" \
+  "dist/mac/Sunjin ERP-0.3.1-universal.dmg.blockmap" \
+  "dist/mac/Sunjin ERP-0.3.1-universal.zip" \
+  "dist/mac/Sunjin ERP-0.3.1-universal.zip.blockmap" \
+  "dist/mac/latest-mac.yml" \
+  "dist/mac/latest.yml" \
+  --title "0.3.1" \
+  --notes "Sunjin ERP 0.3.1 release"
 ```
 
 Windows 빌드 PC에서:
@@ -265,7 +289,10 @@ GitHub Actions 자동 릴리즈:
 GitHub Releases 확인 항목:
 
 - Windows 설치 파일 `.exe`
+- macOS 설치 파일 `.dmg`
+- macOS 업데이트 자산 `.zip`
 - `latest.yml`
+- `latest-mac.yml`
 - 관련 `.blockmap`
 
 자동 업데이트 검증 절차:
@@ -283,13 +310,13 @@ GitHub Releases 확인 항목:
 
 | 브랜치 | 역할 |
 | --- | --- |
-| main | 안정 버전 |
+| master | 안정 버전 |
 | codex/* | 기능 개발 브랜치 |
 
 규칙
 
-- main 브랜치는 항상 실행 가능한 상태를 유지해야 한다.
-- codex 브랜치에서 개발 후 main으로 병합한다.
+- `master` 브랜치는 항상 실행 가능한 상태를 유지해야 한다.
+- codex 브랜치에서 개발 후 `master`로 병합한다.
 
 ---
 
@@ -300,7 +327,7 @@ GitHub Releases 확인 항목:
 1. 로컬 코드 수정
 2. GitHub 브랜치 업로드
 3. Windows 테스트 PC 실행 검증
-4. 문제 없을 경우 main 병합
+4. 문제 없을 경우 `master` 병합
 
 테스트 PC는 **최종 실행 환경 검증 용도**이다.
 설치형 클라이언트 기준으로는 로그인 화면, MFA 화면, 대시보드 진입 여부와 업데이트 확인 동작을 우선 검증한다.
@@ -318,7 +345,7 @@ GitHub Releases 확인 항목:
 Codex 사용 시 다음 원칙을 따른다.
 
 1. codex 브랜치에서만 작업한다.
-2. main 브랜치에서 직접 수정하지 않는다.
+2. `master` 브랜치에서 직접 수정하지 않는다.
 3. 커밋 전 코드 오류 여부를 확인한다.
 4. 변경 사항은 작은 단위로 커밋한다.
 
@@ -348,7 +375,7 @@ docs/
 
 ```bash
 cd "/Users/glory_ai_sever/Desktop/erp porject"
-npm run start:db:local
+npm run start:db:prod
 ```
 
 현재 단계 원칙:

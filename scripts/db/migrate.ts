@@ -279,6 +279,9 @@ async function migrate() {
     )
   `);
 
+  await query(`alter table master.customer_equipments add column if not exists deleted_at timestamptz null`);
+  await query(`alter table master.customer_equipments add column if not exists deleted_by text null references identity.users(id) on delete set null`);
+
   await query(`
     create table if not exists master.equipment_master_options (
       id text primary key,
@@ -306,6 +309,41 @@ async function migrate() {
       created_at timestamptz not null default now(),
       approved_at timestamptz null,
       approved_by text null references identity.users(id) on delete set null
+    )
+  `);
+
+  await query(`
+    create table if not exists master.customer_search_index (
+      customer_id text primary key references master.customers(id) on delete cascade,
+      search_text text not null default '',
+      search_normalized text not null default '',
+      updated_at timestamptz not null default now()
+    )
+  `);
+
+  await query(`
+    create table if not exists master.customer_merge_history (
+      id text primary key,
+      keep_customer_id text not null references master.customers(id) on delete cascade,
+      merged_customer_id text not null,
+      merged_customer_name text not null default '',
+      merged_snapshot jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      created_by text null references identity.users(id) on delete set null
+    )
+  `);
+
+  await query(`
+    create table if not exists master.customer_equipment_change_history (
+      id text primary key,
+      equipment_id text not null,
+      customer_id text not null references master.customers(id) on delete cascade,
+      asset_id text null references master.customer_assets(id) on delete set null,
+      action text not null,
+      before_snapshot jsonb not null default '{}'::jsonb,
+      after_snapshot jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      created_by text null references identity.users(id) on delete set null
     )
   `);
 
@@ -587,8 +625,12 @@ async function migrate() {
   await query(`create index if not exists idx_customer_equipments_serial on master.customer_equipments(serial_no)`);
   await query(`create index if not exists idx_customer_equipments_serial_trgm on master.customer_equipments using gin (serial_no gin_trgm_ops)`);
   await query(`create index if not exists idx_customer_equipments_name_trgm on master.customer_equipments using gin (equipment_name gin_trgm_ops)`);
+  await query(`create index if not exists idx_customer_equipments_deleted on master.customer_equipments(customer_id, deleted_at, updated_at desc)`);
   await query(`create index if not exists idx_equipment_master_options_type_status on master.equipment_master_options(option_type, status, option_value)`);
   await query(`create index if not exists idx_master_data_requests_status_created on master.master_data_requests(status, created_at desc)`);
+  await query(`create index if not exists idx_customer_search_index_trgm on master.customer_search_index using gin (search_normalized gin_trgm_ops)`);
+  await query(`create index if not exists idx_customer_merge_history_keep on master.customer_merge_history(keep_customer_id, created_at desc)`);
+  await query(`create index if not exists idx_customer_equipment_change_history_equipment on master.customer_equipment_change_history(equipment_id, created_at desc)`);
   await query(`create index if not exists idx_file_links_entity on files.file_links(entity_type, entity_id, created_at desc)`);
   await query(`create index if not exists idx_customer_registration_extractions_customer on master.customer_registration_extractions(customer_id, created_at desc)`);
   await query(`create index if not exists idx_sales_orders_request_date on sales.orders(request_date desc)`);
@@ -600,6 +642,61 @@ async function migrate() {
   await query(`create index if not exists idx_asset_audit_history_asset on asset.asset_audit_history(asset_id, sequence_no)`);
   await query(`create index if not exists idx_asset_repair_history_asset on asset.asset_repair_history(asset_id, sequence_no)`);
   await query(`create index if not exists idx_asset_knowledge_records_deleted on asset.knowledge_records(deleted_at, category, updated_at desc)`);
+
+  await query(`
+    insert into master.customer_search_index (customer_id, search_text, search_normalized, updated_at)
+    select
+      c.id,
+      concat_ws(' ',
+        c.customer_no,
+        c.customer_name,
+        c.business_registration_no,
+        c.representative_name,
+        c.company_phone,
+        c.company_email,
+        coalesce(string_agg(distinct cc.contact_name, ' '), ''),
+        coalesce(string_agg(distinct cc.mobile_phone, ' '), ''),
+        coalesce(string_agg(distinct cc.office_phone, ' '), ''),
+        coalesce(string_agg(distinct a.asset_name, ' '), ''),
+        coalesce(string_agg(distinct a.vessel_type, ' '), ''),
+        coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+        coalesce(string_agg(distinct e.manufacturer, ' '), ''),
+        coalesce(string_agg(distinct e.model_name, ' '), ''),
+        coalesce(string_agg(distinct e.serial_no, ' '), '')
+      ) as search_text,
+      lower(regexp_replace(concat_ws(' ',
+        c.customer_no,
+        c.customer_name,
+        c.business_registration_no,
+        regexp_replace(coalesce(c.business_registration_no, ''), '[^0-9a-zA-Z가-힣]+', '', 'g'),
+        c.representative_name,
+        c.company_phone,
+        regexp_replace(coalesce(c.company_phone, ''), '[^0-9a-zA-Z가-힣]+', '', 'g'),
+        c.company_email,
+        coalesce(string_agg(distinct cc.contact_name, ' '), ''),
+        coalesce(string_agg(distinct cc.mobile_phone, ' '), ''),
+        coalesce(string_agg(distinct regexp_replace(cc.mobile_phone, '[^0-9a-zA-Z가-힣]+', '', 'g'), ' '), ''),
+        coalesce(string_agg(distinct cc.office_phone, ' '), ''),
+        coalesce(string_agg(distinct regexp_replace(cc.office_phone, '[^0-9a-zA-Z가-힣]+', '', 'g'), ' '), ''),
+        coalesce(string_agg(distinct a.asset_name, ' '), ''),
+        coalesce(string_agg(distinct a.vessel_type, ' '), ''),
+        coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+        coalesce(string_agg(distinct e.manufacturer, ' '), ''),
+        coalesce(string_agg(distinct case when lower(e.manufacturer) = 'cat' then 'caterpillar' else e.manufacturer end, ' '), ''),
+        coalesce(string_agg(distinct e.model_name, ' '), ''),
+        coalesce(string_agg(distinct e.serial_no, ' '), '')
+      ), '\\s+', ' ', 'g')) as search_normalized,
+      now()
+    from master.customers c
+    left join master.customer_contacts cc on cc.customer_id = c.id
+    left join master.customer_assets a on a.customer_id = c.id
+    left join master.customer_equipments e on e.customer_id = c.id and e.deleted_at is null
+    group by c.id
+    on conflict (customer_id) do update
+      set search_text = excluded.search_text,
+          search_normalized = excluded.search_normalized,
+          updated_at = now()
+  `);
 
   console.log("Database migration completed.");
 }

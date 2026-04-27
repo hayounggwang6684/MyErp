@@ -144,6 +144,15 @@ async function handleProjectClick(event) {
     return true;
   }
 
+  const templatePresetButton = event.target.closest("[data-project-template-preset]");
+  if (templatePresetButton) {
+    const preset = templatePresetButton.dataset.projectTemplatePreset || "";
+    projectState.templateModal.draft = preset === "invoice" ? invoiceQuotationTemplatePreset() : blankQuotationTemplate();
+    projectState.templateModal.selectedTemplateId = "";
+    renderProjectWorkspace();
+    return true;
+  }
+
   const templateSelectButton = event.target.closest("[data-project-template-select]");
   if (templateSelectButton) {
     const template = loadQuotationTemplates().find((item) => item.id === templateSelectButton.dataset.projectTemplateSelect);
@@ -203,7 +212,8 @@ async function handleProjectClick(event) {
 
   const projectFilterReset = event.target.closest("[data-project-filter-reset]");
   if (projectFilterReset) {
-    projectState.filters = { startDate: "", endDate: "", status: "", manager: "", query: "" };
+    projectState.filters = defaultProjectFilters();
+    projectState.hasSearched = false;
     renderProjectWorkspace();
     return true;
   }
@@ -257,6 +267,7 @@ async function handleProjectFormSubmit(form) {
       manager: "",
       query: String(data.query || ""),
     };
+    projectState.hasSearched = true;
     renderProjectWorkspace();
     return true;
   }
@@ -541,6 +552,35 @@ function handleProjectMouseDown(event) {
 
     window.addEventListener("mousemove", resizeColumn);
     window.addEventListener("mouseup", stopResizeColumn);
+    return true;
+  }
+
+  const quotationFormResizer = event.target.closest("[data-project-quotation-form-resizer]");
+  if (quotationFormResizer) {
+    event.preventDefault();
+    event.stopPropagation();
+    const layout = quotationFormResizer.closest(".project-quotation-layout");
+    if (!(layout instanceof HTMLElement)) {
+      return true;
+    }
+    const rect = layout.getBoundingClientRect();
+    const currentWidth = loadProjectQuotationFormWidth() || layout.querySelector(".project-quotation-form-grid")?.getBoundingClientRect().width || rect.width * 0.17;
+    const startX = event.clientX;
+    const maxWidth = Math.max(220, rect.width - 420);
+
+    function resizeQuotationForm(moveEvent) {
+      const nextWidth = Math.min(maxWidth, Math.max(132, currentWidth + moveEvent.clientX - startX));
+      saveProjectQuotationFormWidth(nextWidth);
+      layout.style.gridTemplateColumns = `${nextWidth}px 8px minmax(0, 1fr)`;
+    }
+
+    function stopResizeQuotationForm() {
+      window.removeEventListener("mousemove", resizeQuotationForm);
+      window.removeEventListener("mouseup", stopResizeQuotationForm);
+    }
+
+    window.addEventListener("mousemove", resizeQuotationForm);
+    window.addEventListener("mouseup", stopResizeQuotationForm);
     return true;
   }
 

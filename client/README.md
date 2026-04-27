@@ -1,6 +1,6 @@
 # Electron 클라이언트 구조
 
-이 폴더는 Windows 설치형 ERP 클라이언트의 초기 Electron 구조를 둔다.
+이 폴더는 Windows 및 macOS 설치형 ERP 클라이언트의 Electron 구조를 둔다.
 
 ## 구성
 
@@ -32,6 +32,8 @@
 - 개인 설정
 - 서버 URL 설정
 - GitHub Releases 최신 버전 확인
+- 장치 로컬 자동 로그인
+- macOS `dmg`/`zip` 설치 자산 생성
 
 ## 향후 확장
 
