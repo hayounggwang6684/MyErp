@@ -5,6 +5,8 @@ dist/
 client/constants.local.js
 .orchestra
 .orchestra/
+.multi-agent
+.multi-agent/
 .mcp.json
 .playwright-mcp/
 .serena/

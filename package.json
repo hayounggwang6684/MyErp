@@ -18,6 +18,7 @@
     "client:dist:mac": "electron-builder --mac dmg zip --universal",
     "client:dist:mac:local": "sh scripts/build-mac-local.sh",
     "client:release": "electron-builder --win nsis --publish always",
+    "multi-agent": "node scripts/multi-agent.js",
     "orchestra": "node scripts/orchestra.js",
     "client:release:mac": "electron-builder --mac dmg zip --universal --publish always"
   },

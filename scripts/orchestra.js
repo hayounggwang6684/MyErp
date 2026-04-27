@@ -6,7 +6,11 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
-const orchestraDir = path.join(root, ".orchestra");
+const appName = process.env.MULTI_AGENT_APP_NAME || "Orchestra";
+const storeName = process.env.MULTI_AGENT_STORE_DIR || ".orchestra";
+const commandName = process.env.MULTI_AGENT_COMMAND || "npm run orchestra";
+const conductorAgent = process.env.MULTI_AGENT_CONDUCTOR || "terminal-d";
+const orchestraDir = path.join(root, storeName);
 const agentsDir = path.join(orchestraDir, "agents");
 const locksDir = path.join(orchestraDir, "locks");
 const ordersDir = path.join(orchestraDir, "orders");
@@ -26,7 +30,7 @@ function ensureStore() {
       createdAt: now(),
       updatedAt: now(),
       conductor: {
-        note: "Shared local state for coordinating terminal windows."
+        note: `Shared local state for coordinating ${appName} terminal windows.`
       }
     });
   }
@@ -216,7 +220,7 @@ function printStatus() {
   const orders = listOrders();
   const conflicts = findConflicts(locks);
 
-  console.log("Orchestra status");
+  console.log(`${appName} status`);
   console.log(`Updated: ${state.updatedAt || "unknown"}`);
   console.log("");
 
@@ -336,7 +340,7 @@ function renderDashboardHtml() {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Orchestra Dashboard</title>
+  <title>${appName} Dashboard</title>
   <style>
     :root {
       color-scheme: light;
@@ -582,7 +586,7 @@ function renderDashboardHtml() {
 <body>
   <header>
     <div>
-      <h1>Orchestra Dashboard</h1>
+      <h1>${appName} Dashboard</h1>
       <div class="subhead" id="updated">상태를 불러오는 중입니다.</div>
     </div>
     <div class="actions">
@@ -726,7 +730,7 @@ function renderChatDashboardHtml() {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Orchestra Room</title>
+  <title>${appName} Room</title>
   <style>
     :root {
       color-scheme: light;
@@ -862,7 +866,7 @@ function renderChatDashboardHtml() {
   <div class="shell">
     <aside>
       <div class="brand">
-        <h1>Orchestra Room</h1>
+        <h1>${appName} Room</h1>
         <div class="updated" id="updated">상태를 불러오는 중입니다.</div>
       </div>
       <div class="toolbar">
@@ -1153,28 +1157,28 @@ function startDashboard(port = 4177) {
   });
 
   server.listen(port, "127.0.0.1", () => {
-    console.log(`Orchestra dashboard: http://127.0.0.1:${port}`);
+    console.log(`${appName} dashboard: http://127.0.0.1:${port}`);
   });
 }
 
 function commandHelp() {
   console.log(`Usage:
-  npm run orchestra -- init
-  npm run orchestra -- status
-  npm run orchestra -- register <agent> [role]
-  npm run orchestra -- start <agent> <task>
-  npm run orchestra -- claim <agent> <file-or-pattern> [...]
-  npm run orchestra -- release <agent>
-  npm run orchestra -- order <agent|all> <message>
-  npm run orchestra -- orders [agent]
-  npm run orchestra -- ack <agent>
-  npm run orchestra -- title <agent>
-  npm run orchestra -- dashboard [port]
-  npm run orchestra -- note <agent> <message>
-  npm run orchestra -- block <agent> <reason>
-  npm run orchestra -- done <agent> [message]
-  npm run orchestra -- events [count]
-  npm run orchestra -- run <agent> -- <command> [args...]`);
+  ${commandName} -- init
+  ${commandName} -- status
+  ${commandName} -- register <agent> [role]
+  ${commandName} -- start <agent> <task>
+  ${commandName} -- claim <agent> <file-or-pattern> [...]
+  ${commandName} -- release <agent>
+  ${commandName} -- order <agent|all> <message>
+  ${commandName} -- orders [agent]
+  ${commandName} -- ack <agent>
+  ${commandName} -- title <agent>
+  ${commandName} -- dashboard [port]
+  ${commandName} -- note <agent> <message>
+  ${commandName} -- block <agent> <reason>
+  ${commandName} -- done <agent> [message]
+  ${commandName} -- events [count]
+  ${commandName} -- run <agent> -- <command> [args...]`);
 }
 
 function initFourAgents() {
@@ -1190,7 +1194,7 @@ function initFourAgents() {
     appendEvent(agent, "registered", { role });
   }
   updateState({ agents: defaults.map(([agent]) => agent) });
-  console.log("Initialized 4 agents: terminal-a, terminal-b, terminal-c, terminal-d");
+  console.log(`Initialized 4 ${appName} agents: terminal-a, terminal-b, terminal-c, terminal-d`);
 }
 
 function main() {
@@ -1224,7 +1228,7 @@ function main() {
   if (command === "order") {
     const [target, ...messageParts] = args;
     const message = messageParts.join(" ").trim();
-    if (!target || !message) fail("Use: npm run orchestra -- order <agent|all> <message>");
+    if (!target || !message) fail(`Use: ${commandName} -- order <agent|all> <message>`);
     const targets = sendOrder(target, message);
     updateState();
     console.log(`Order sent to ${targets.join(", ")}`);
@@ -1249,7 +1253,7 @@ function main() {
 
   if (command === "ack") {
     const [agent] = args;
-    if (!agent) fail("Use: npm run orchestra -- ack <agent>");
+    if (!agent) fail(`Use: ${commandName} -- ack <agent>`);
     const file = orderFile(agent);
     const order = readJson(file, null);
     if (!order) fail(`No order for ${agent}.`);
@@ -1263,7 +1267,7 @@ function main() {
 
   if (command === "title") {
     const [agent] = args;
-    if (!agent) fail("Use: npm run orchestra -- title <agent>");
+    if (!agent) fail(`Use: ${commandName} -- title <agent>`);
     setTerminalTitle(agent);
     return;
   }
@@ -1348,22 +1352,22 @@ function main() {
     if (fs.existsSync(file)) fs.unlinkSync(file);
     saveAgent(agent, { status: "done", task: null, filesTouching: [], blockedBy: null });
     appendEvent(agent, "task_done", { message });
-    if (agent !== "terminal-d") {
-      const reviewMessage = `${agent} 완료 제출: ${message || "완료 내용 없음"}. status/events와 변경사항을 확인하고 npm run orchestra -- run terminal-d -- npm run build 로 검증해. 문제가 있으면 해당 터미널에 order로 되돌려.`;
-      sendOrder("terminal-d", reviewMessage);
-      appendEvent("terminal-d", "review_requested", { from: agent, message: reviewMessage });
+    if (agent !== conductorAgent) {
+      const reviewMessage = `${agent} 완료 제출: ${message || "완료 내용 없음"}. status/events와 변경사항을 확인하고 ${commandName} -- run ${conductorAgent} -- npm run build 로 검증해. 문제가 있으면 해당 터미널에 order로 되돌려.`;
+      sendOrder(conductorAgent, reviewMessage);
+      appendEvent(conductorAgent, "review_requested", { from: agent, message: reviewMessage });
     }
     updateState();
     console.log(`${agent} done`);
-    if (agent !== "terminal-d") {
-      console.log("Review order sent to terminal-d");
+    if (agent !== conductorAgent) {
+      console.log(`Review order sent to ${conductorAgent}`);
     }
     return;
   }
 
   if (command === "run") {
     const separator = args.indexOf("--");
-    if (separator < 1) fail("Use: npm run orchestra -- run <agent> -- <command> [args...]");
+    if (separator < 1) fail(`Use: ${commandName} -- run <agent> -- <command> [args...]`);
     const agent = args[0];
     const commandArgs = args.slice(separator + 1);
     if (commandArgs.length === 0) fail("Command is required.");
@@ -1389,4 +1393,8 @@ function main() {
   fail(`Unknown command: ${command}`);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { main };
