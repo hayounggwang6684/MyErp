@@ -469,6 +469,11 @@ function blankQuotationTemplate() {
     document: {
       title: "청구서",
       logoText: "SUNJIN",
+      logoImageUrl: "",
+      logoPosition: "left",
+      extraLogoText: "STX · PULLMASTER",
+      extraLogoImageUrl: "",
+      extraLogoPosition: "right",
       tagline: "고객의 마음으로 일하는 욕·해상용 엔진/부속 공급, 수리전문점",
       supplierName: "(주)선진종합",
       supplierRegistrationNo: "601-81-31019",
@@ -495,6 +500,11 @@ function invoiceQuotationTemplatePreset() {
     document: {
       title: "청구서",
       logoText: "SUNJIN",
+      logoImageUrl: "",
+      logoPosition: "left",
+      extraLogoText: "STX · PULLMASTER",
+      extraLogoImageUrl: "",
+      extraLogoPosition: "right",
       tagline: "고객의 마음으로 일하는 욕·해상용 엔진/부속 공급, 수리전문점",
       supplierName: "(주)선진종합",
       supplierRegistrationNo: "601-81-31019",
@@ -671,6 +681,11 @@ function readQuotationTemplateDraftFromForm(form, { requireName = false } = {}) 
     document: {
       title: String(data.document_title || "청구서"),
       logoText: String(data.logo_text || "SUNJIN"),
+      logoImageUrl: String(data.logo_image_url || ""),
+      logoPosition: String(data.logo_position || "left"),
+      extraLogoText: String(data.extra_logo_text || ""),
+      extraLogoImageUrl: String(data.extra_logo_image_url || ""),
+      extraLogoPosition: String(data.extra_logo_position || "right"),
       tagline: String(data.tagline || ""),
       supplierName: String(data.supplier_name || ""),
       supplierRegistrationNo: String(data.supplier_registration_no || ""),
@@ -965,6 +980,18 @@ function quotationItemPrintClass(item = {}) {
 function quotationAmountText(value, currency = "KRW") {
   const amount = Number(value || 0).toLocaleString("ko-KR");
   return currency === "KRW" ? `₩${amount}` : `${escapeTextarea(currency)} ${amount}`;
+}
+
+function renderTemplateLogoMark(document = {}, kind = "primary") {
+  const imageUrl = kind === "extra" ? document.extraLogoImageUrl : document.logoImageUrl;
+  const text = kind === "extra" ? document.extraLogoText : document.logoText;
+  const className = kind === "extra" ? "project-template-extra-logo" : "project-template-brand-block";
+  if (imageUrl) {
+    return `<div class="${className} image-logo"><img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(text || "logo")}" /><span>${escapeTextarea(text || "")}</span></div>`;
+  }
+  return kind === "extra"
+    ? `<div class="${className}">${escapeTextarea(text || "")}</div>`
+    : `<div class="${className}"><strong>${escapeTextarea(text || "SUNJIN")}</strong><small>SHERWOOD</small></div>`;
 }
 
 function quotationPrintHtml(quotation) {
@@ -1715,13 +1742,10 @@ function renderProjectTemplateCanvasPreview(template) {
     ">
       <div class="project-template-page">
         <div class="project-template-page-inner">
-          <div class="project-template-document-head">
-            <div class="project-template-brand-block">
-              <strong>${escapeTextarea(document.logoText || "SUNJIN")}</strong>
-              <small>SHERWOOD</small>
-            </div>
+          <div class="project-template-document-head logo-primary-${escapeAttribute(document.logoPosition || "left")} logo-extra-${escapeAttribute(document.extraLogoPosition || "right")}">
+            ${renderTemplateLogoMark(document, "primary")}
             <h2>${escapeTextarea(document.title || "청구서")}</h2>
-            <div class="project-template-partner-logos">STX · PULLMASTER</div>
+            ${renderTemplateLogoMark(document, "extra")}
           </div>
           <div class="project-template-tagline">${escapeTextarea(document.tagline || "")}</div>
           <div class="project-template-preview-top">
@@ -1855,6 +1879,23 @@ function renderProjectTemplateModal() {
               <p>로고 텍스트와 문서 상단 안내 문구를 설정합니다.</p>
               <div class="project-template-grid two">
                 <label>로고 텍스트 <input class="text-field" name="logo_text" value="${escapeAttribute(draft.document.logoText || "")}" /></label>
+                <label>로고 이미지 URL/경로 <input class="text-field" name="logo_image_url" value="${escapeAttribute(draft.document.logoImageUrl || "")}" placeholder="https://... 또는 file 경로" /></label>
+                <label>로고 위치
+                  <select class="text-field" name="logo_position">
+                    <option value="left"${draft.document.logoPosition === "left" ? " selected" : ""}>좌측</option>
+                    <option value="center"${draft.document.logoPosition === "center" ? " selected" : ""}>중앙</option>
+                    <option value="right"${draft.document.logoPosition === "right" ? " selected" : ""}>우측</option>
+                  </select>
+                </label>
+                <label>추가 로고 텍스트 <input class="text-field" name="extra_logo_text" value="${escapeAttribute(draft.document.extraLogoText || "")}" /></label>
+                <label>추가 로고 이미지 URL/경로 <input class="text-field" name="extra_logo_image_url" value="${escapeAttribute(draft.document.extraLogoImageUrl || "")}" /></label>
+                <label>추가 로고 위치
+                  <select class="text-field" name="extra_logo_position">
+                    <option value="left"${draft.document.extraLogoPosition === "left" ? " selected" : ""}>좌측</option>
+                    <option value="center"${draft.document.extraLogoPosition === "center" ? " selected" : ""}>중앙</option>
+                    <option value="right"${draft.document.extraLogoPosition === "right" ? " selected" : ""}>우측</option>
+                  </select>
+                </label>
                 <label>상단 문구 <input class="text-field" name="tagline" value="${escapeAttribute(draft.document.tagline || "")}" /></label>
               </div>
             </section>

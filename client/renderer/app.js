@@ -1853,10 +1853,10 @@ function renderCustomerWorkspace() {
   const currentModelOptions = Array.from(new Set([...equipmentModelOptionsFor(selected, currentManufacturer), equipmentFormTarget?.modelName].filter(Boolean)));
   const equipmentEditorMarkup = selectedAsset
     ? `
-      <form id="customer-equipment-form" class="customer-equipment-editor">
+      <form id="customer-equipment-form" class="customer-equipment-editor" style="gap: 6px; padding-top: 6px;">
         <input type="hidden" name="asset_id" value="${escapeAttribute(selectedAsset.id)}" />
         <input type="hidden" name="equipment_id" value="${escapeAttribute(equipmentFormTarget?.id || "")}" />
-	        <div class="customer-equipment-editor-head">
+	        <div class="customer-equipment-editor-head" style="gap: 8px;">
 	          <strong>${equipmentEditorMode === "create" ? "장비 신규 추가" : "장비 정보 변경"}</strong>
 	          ${
               equipmentFormTarget
@@ -1865,33 +1865,33 @@ function renderCustomerWorkspace() {
             }
 	          <button type="button" class="customer-add-row compact" data-customer-equipment-new>${equipmentEditorMode === "create" ? "신규 입력 중" : "+ 장비 신규"}</button>
 	        </div>
-        <div class="customer-equipment-editor-fields">
-          <select class="text-field" name="equipment_type" data-master-field="equipment_type" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentType || "MAIN_ENGINE")}">
+        <div class="customer-equipment-editor-fields" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;">
+          <select class="text-field" name="equipment_type" data-master-field="equipment_type" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentType || "MAIN_ENGINE")}" style="min-height: 40px; height: 42px;">
             ${equipmentTypeOptions
               .map(([value, label]) => `<option value="${escapeAttribute(value)}"${equipmentFormTarget?.equipmentType === value || (!equipmentFormTarget && value === "MAIN_ENGINE") ? " selected" : ""}>${escapeTextarea(label)}</option>`)
               .join("")}
             <option value="__add_new__">새 항목 추가</option>
           </select>
-          <select class="text-field" name="equipment_name" data-master-field="equipment_unit" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentName || "")}" required>
+          <select class="text-field" name="equipment_name" data-master-field="equipment_unit" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentName || "")}" required style="min-height: 40px; height: 42px;">
             <option value=""${equipmentFormTarget?.equipmentName ? "" : " selected"}>호기/장비명</option>
             ${customerSelectOptions(equipmentUnitOptions, equipmentFormTarget?.equipmentName || "")}
             <option value="__add_new__">새 항목 추가</option>
           </select>
-          <select class="text-field" name="manufacturer" data-master-field="manufacturer" data-current-value="${escapeAttribute(currentManufacturer)}">
+          <select class="text-field" name="manufacturer" data-master-field="manufacturer" data-current-value="${escapeAttribute(currentManufacturer)}" style="min-height: 40px; height: 42px;">
             <option value=""${currentManufacturer ? "" : " selected"}>제조사</option>
             ${customerSelectOptions(manufacturerOptions, currentManufacturer)}
             <option value="__add_new__">새 항목 추가</option>
           </select>
-          <select class="text-field" name="model_name" data-master-field="model_name" data-current-value="${escapeAttribute(equipmentFormTarget?.modelName || "")}" data-customer-model-select>
+          <select class="text-field" name="model_name" data-master-field="model_name" data-current-value="${escapeAttribute(equipmentFormTarget?.modelName || "")}" data-customer-model-select style="min-height: 40px; height: 42px;">
             <option value=""${equipmentFormTarget?.modelName ? "" : " selected"}>모델명</option>
             ${customerSelectOptions(currentModelOptions, equipmentFormTarget?.modelName || "")}
             <option value="__add_new__">새 항목 추가</option>
           </select>
-          <input class="text-field" name="serial_no" placeholder="SN" value="${escapeAttribute(equipmentFormTarget?.serialNo || "")}" />
-          <input class="text-field" name="installation_position" placeholder="설치 위치" value="${escapeAttribute(equipmentFormTarget?.installationPosition || "")}" />
-          <textarea class="text-area" name="notes" placeholder="REMARK">${escapeTextarea(equipmentFormTarget?.notes || "")}</textarea>
+          <input class="text-field" name="serial_no" placeholder="SN" value="${escapeAttribute(equipmentFormTarget?.serialNo || "")}" style="min-height: 40px; height: 42px;" />
+          <input class="text-field" name="installation_position" placeholder="설치 위치" value="${escapeAttribute(equipmentFormTarget?.installationPosition || "")}" style="min-height: 40px; height: 42px;" />
+          <textarea class="text-area" name="notes" placeholder="REMARK" style="min-height: 42px;">${escapeTextarea(equipmentFormTarget?.notes || "")}</textarea>
         </div>
-        <button class="secondary-button" type="submit">${equipmentEditorMode === "create" ? "장비 추가" : "장비 변경 저장"}</button>
+        <button class="secondary-button" type="submit" style="min-height: 38px;">${equipmentEditorMode === "create" ? "장비 추가" : "장비 변경 저장"}</button>
       </form>
     `
     : `
@@ -1935,7 +1935,7 @@ function renderCustomerWorkspace() {
             ${customerSortButtonMarkup("equipment", "serial_no", "SN")}
             ${customerSortButtonMarkup("equipment", "notes", "REMARK")}
           </div>
-	          <div class="customer-equipment-list">
+	          <div class="customer-equipment-list" style="flex: 0 0 224px; height: 224px; min-height: 224px;">
 	            ${equipmentRowsMarkup}
 	          </div>
 	          ${equipmentEditorMarkup}
@@ -2043,11 +2043,11 @@ function renderCustomerWorkspace() {
         </section>
         <section class="info-card customer-inline-detail">
           <div class="stack-item customer-panel-heading">
-            <div>
+            <div style="${customerState.detailTab === "assets" && selected ? "display: flex; align-items: center; gap: 14px; flex-wrap: wrap;" : ""}">
               ${
                 selected || isCreateMode
                   ? `
-                    <div class="customer-record-tabs customer-detail-tabs">
+                    <div class="customer-record-tabs customer-detail-tabs" style="${customerState.detailTab === "assets" && selected ? "margin-bottom: 0;" : ""}">
                       <button type="button" class="customer-record-tab${customerState.detailTab === "overview" ? " active" : ""}" data-customer-detail-tab="overview">기본</button>
                       <button type="button" class="customer-record-tab${customerState.detailTab === "organization" ? " active" : ""}" data-customer-detail-tab="organization">조직</button>
                       <button type="button" class="customer-record-tab${customerState.detailTab === "assets" ? " active" : ""}" data-customer-detail-tab="assets">장비</button>
@@ -2055,7 +2055,7 @@ function renderCustomerWorkspace() {
                   `
                   : '<p class="eyebrow">상세</p>'
               }
-              <h3 class="subsection-title">${isCreateMode ? "신규 고객" : selected ? selected.customer.customerName : "업체를 선택하세요"}</h3>
+              <h3 class="subsection-title" style="${customerState.detailTab === "assets" && selected ? "margin: 0;" : ""}">${isCreateMode ? "신규 고객" : selected ? selected.customer.customerName : "업체를 선택하세요"}</h3>
             </div>
             ${isCreateMode ? '<span class="status-badge neutral">입력</span>' : selected ? `<span class="status-badge neutral">${customerTypeLabel(selected.customer.customerType)}</span>` : ""}
           </div>
