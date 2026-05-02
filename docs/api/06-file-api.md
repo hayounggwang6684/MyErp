@@ -26,6 +26,7 @@
 | `POST` | `/api/v1/files/{fileId}/links` | 업무 엔터티와 연결 |
 | `DELETE` | `/api/v1/files/{fileId}/links/{linkId}` | 파일 연결 해제 |
 | `POST` | `/api/v1/files/{fileId}/versions` | 새 버전 업로드 |
+| `POST` | `/api/v1/orders/{orderId}/documents/upload` | 주문 문서 업로드 및 주문 연결 |
 
 ## 3. 업로드 요청 예시
 
@@ -62,3 +63,4 @@
 
 - 파일 API는 수리, 주문, 판매, 출하, 청구와 공통으로 연결된다.
 - 저장 경로 규칙은 서버 내부 구현에서만 사용한다.
+- 주문 문서 업로드는 `orders/{orderId}/{fileId}-{originalName}` 규칙으로 저장하고 `order_document` 링크를 함께 기록한다.

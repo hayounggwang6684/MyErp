@@ -1816,13 +1816,16 @@ function renderProjectTemplateModal() {
                 <button type="button" class="secondary-button" data-project-template-new>신규</button>
               </div>
               <button type="button" class="project-template-preset-button" data-project-template-preset="invoice">청구서 기본형 불러오기</button>
+              <label>저장 양식
+                <select class="text-field" data-project-template-picker>
+                  <option value="__new__">+ 신규 템플릿</option>
+                  ${templates.map((template) => `<option value="${escapeAttribute(template.id)}"${template.id === draft.id ? " selected" : ""}>${escapeTextarea(template.name || "이름 없음")}</option>`).join("")}
+                </select>
+              </label>
               <div class="project-template-current">
                 <span>현재 선택</span>
-                <strong>${escapeTextarea(draft.name || "새 템플릿")}</strong>
+                <input class="text-field project-template-current-name" form="project-template-form" name="template_name" value="${escapeAttribute(draft.name || "")}" placeholder="템플릿명" />
                 <small>${draft.page.orientation === "portrait" ? "A4 세로" : "A4 가로"} / ${draft.document.title || "문서"} / ${draft.items.length}개 기본 행</small>
-              </div>
-              <div class="project-template-list">
-                ${templates.map((template) => `<button type="button" class="project-template-row${template.id === draft.id ? " active" : ""}" data-project-template-select="${escapeAttribute(template.id)}">${escapeTextarea(template.name || "이름 없음")}</button>`).join("") || '<div class="project-empty">저장된 템플릿 없음</div>'}
               </div>
             </section>
             <section class="project-template-sidebar-section">
@@ -1858,13 +1861,12 @@ function renderProjectTemplateModal() {
             </div>
             ${renderProjectTemplateCanvasPreview(draft)}
           </section>
-          <form id="project-template-form" class="project-template-form">
+          <form id="project-template-form" class="project-template-form project-template-editor">
             <input type="hidden" name="template_id" value="${escapeAttribute(draft.id || "")}" />
             <section class="project-template-section">
               <h4>문서 기본</h4>
               <p>문서명, 용지 방향, 출력 제목을 정합니다.</p>
               <div class="project-template-grid two">
-                <label>템플릿명 <input class="text-field" name="template_name" value="${escapeAttribute(draft.name || "")}" /></label>
                 <label>문서 제목 <input class="text-field" name="document_title" value="${escapeAttribute(draft.document.title || "")}" /></label>
                 <label>용지 방향
                   <select class="text-field" name="page_orientation">

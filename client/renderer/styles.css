@@ -577,6 +577,11 @@ button, input { font: inherit; }
   background: #f2f4f7;
 }
 
+.asset-workspace.inventory-workspace {
+  gap: 0;
+  padding: 0;
+}
+
 .project-empty-row {
   padding: 14px;
   color: var(--ink-600);
@@ -4943,7 +4948,7 @@ button, input { font: inherit; }
 .project-template-layout {
   min-height: 0;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1.8fr) 390px;
+  grid-template-columns: 250px minmax(0, 1fr);
   gap: 14px;
   padding: 12px;
   overflow: hidden;
@@ -5055,6 +5060,11 @@ button, input { font: inherit; }
   line-height: 1.45;
 }
 
+.project-template-current-name {
+  width: 100%;
+  font-weight: 900;
+}
+
 .project-template-field-chip {
   display: flex;
   justify-content: space-between;
@@ -5093,6 +5103,26 @@ button, input { font: inherit; }
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+}
+
+.project-template-editor {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+}
+
+.project-template-editor .project-template-section {
+  min-width: 0;
+}
+
+.project-template-preview-pane {
+  grid-column: 2;
+}
+
+.project-template-editor .project-template-section:first-of-type,
+.project-template-editor .project-template-form-actions {
+  grid-column: 1 / -1;
 }
 
 .project-template-preview-header-bar {

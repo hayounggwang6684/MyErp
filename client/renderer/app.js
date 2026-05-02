@@ -207,10 +207,12 @@ let assetState = {
 };
 let assetColumnResizeState = null;
 let assetSearchComposing = false;
-let assetSearchRenderTimer = null;
+const assetSearchRenderTimers = new Map();
 let inventoryPaneResizeState = null;
 let inventoryState = {
   viewMode: "stock",
+  listActivated: false,
+  summaryFilter: "",
   filters: {
     startDate: "2026-04-01",
     endDate: "2026-04-30",
@@ -230,6 +232,9 @@ let inventoryState = {
       supplier: "태성해운",
       name: "Caterpillar 3412 연료필터 세트",
       code: "CAT-3412-FLT",
+      manufacturer: "Caterpillar",
+      targetModel: "3412",
+      description: "메인 엔진 정기 점검용 연료필터 세트",
       status: "발주 필요",
       onHand: 2,
       safetyStock: 5,
@@ -254,6 +259,9 @@ let inventoryState = {
       supplier: "남해플랜트서비스",
       name: "AVR 모듈",
       code: "AVR-MOD-220",
+      manufacturer: "Stamford",
+      targetModel: "UCI274",
+      description: "발전기 전압 제어 예비 모듈",
       status: "입고 대기",
       onHand: 0,
       safetyStock: 1,
@@ -275,6 +283,9 @@ let inventoryState = {
       supplier: "영광기업",
       name: "가스켓 세트",
       code: "GSK-SET-77",
+      manufacturer: "YKP",
+      targetModel: "MGX-77",
+      description: "감속기 정기 점검용 가스켓 세트",
       status: "정상",
       onHand: 12,
       safetyStock: 4,
@@ -303,6 +314,7 @@ let inventoryState = {
       unit: "EA",
       amount: 680000,
       outboundStatus: "출고 준비",
+      outboundInstruction: { status: "대기", requestedBy: "", requestedAt: "", note: "" },
       orderNo: "OR-2026-004",
       documents: [{ type: "거래명세서", name: "태성해운 필터 판매 명세", id: "DOC-SALE-001" }],
       movements: [{ date: "2026-04-24", type: "출고 준비", quantity: 2, note: "포장 대기" }],
@@ -320,6 +332,7 @@ let inventoryState = {
       unit: "EA",
       amount: 420000,
       outboundStatus: "완료",
+      outboundInstruction: { status: "완료", requestedBy: "김관리", requestedAt: "2026-04-20", note: "현장 직접 전달 완료" },
       orderNo: "OR-2026-011",
       documents: [{ type: "발주서", name: "AVR 모듈 발주서", id: "DOC-SALE-002" }],
       movements: [{ date: "2026-04-20", type: "출고", quantity: 1, note: "현장 직접 전달" }],
@@ -337,6 +350,7 @@ let inventoryState = {
       unit: "SET",
       amount: 195000,
       outboundStatus: "출고 완료",
+      outboundInstruction: { status: "지시 완료", requestedBy: "박영업", requestedAt: "2026-04-22", note: "정비팀 수령 일정에 맞춰 출고" },
       orderNo: "OR-2026-013",
       documents: [],
       movements: [{ date: "2026-04-23", type: "출고", quantity: 3, note: "정비팀 수령" }],
@@ -1768,14 +1782,13 @@ function renderCustomerWorkspace() {
             const beforeName = history.beforeSnapshot?.equipment_name || "";
             const afterName = history.afterSnapshot?.equipment_name || "";
             const displayName = afterName || beforeName || history.equipmentId;
-            const isDeleted = history.action === "DELETE";
             return `
               <div class="customer-master-usage-row">
                 <span>${escapeTextarea(history.action)}</span>
                 <span>${escapeTextarea(String(displayName))}</span>
                 <span>${escapeTextarea(history.createdByName || "-")}</span>
                 <span>${formatDate(history.createdAt)}</span>
-                <span>${isDeleted ? `<button type="button" class="ghost-button compact" data-customer-equipment-restore="${escapeAttribute(history.equipmentId)}">복구</button>` : ""}</span>
+                <span></span>
               </div>
             `;
           })
@@ -2383,6 +2396,7 @@ function renderActiveTab() {
     projectWorkspace.classList.add("hidden");
     invoiceWorkspace.classList.add("hidden");
     assetWorkspace.classList.add("hidden");
+    assetWorkspace.classList.remove("inventory-workspace");
     dashboardCards.classList.add("hidden");
     dashboardTablePanel.classList.add("hidden");
     renderWorkspaceTabs();
@@ -2407,6 +2421,7 @@ function renderActiveTab() {
   projectWorkspace.classList.toggle("hidden", !isProject);
   invoiceWorkspace.classList.toggle("hidden", !isInvoices);
   assetWorkspace.classList.toggle("hidden", !(isAssets || isInventory));
+  assetWorkspace.classList.toggle("inventory-workspace", isInventory);
   dashboardCards.classList.toggle("hidden", isCustomers || isOrders || isProject || isInvoices || isAssets || isInventory);
   dashboardTablePanel.classList.toggle("hidden", isCustomers || isOrders || isProject || isInvoices || isAssets || isInventory);
   renderWorkspaceTabs();
@@ -2668,24 +2683,33 @@ function renderAssetWorkspace() {
 
 function inventorySummaryCards(items) {
   return [
-    { label: "발주 필요", value: items.filter((item) => item.status === "발주 필요").length, detail: "즉시 발주 대상" },
-    { label: "입고 대기", value: items.filter((item) => item.status === "입고 대기").length, detail: "입고 예정 품목" },
-    { label: "출고 예정", value: items.filter((item) => item.outboundPlanned > 0).length, detail: "작업/판매 출고" },
+    { label: "발주 필요", value: items.filter((item) => item.status === "발주 필요").length, detail: "즉시 발주", filter: "status:발주 필요" },
+    { label: "입고 대기", value: items.filter((item) => item.status === "입고 대기").length, detail: "입고 예정", filter: "status:입고 대기" },
+    { label: "출고 예정", value: items.filter((item) => item.outboundPlanned > 0).length, detail: "출고 예정", filter: "outbound" },
   ];
 }
 
 function inventorySalesSummaryCards(records) {
   return [
-    { label: "판매 진행", value: records.filter((record) => record.status === "출고 예정").length, detail: "출고 준비 포함" },
-    { label: "납품 완료", value: records.filter((record) => record.status === "납품 완료").length, detail: "완료 처리" },
-    { label: "청구 대기", value: records.filter((record) => record.status === "청구 대기").length, detail: "매출 반영 필요" },
-    { label: "문서 미첨부", value: records.filter((record) => !(record.documents || []).length).length, detail: "증빙 보완 필요" },
+    { label: "판매 진행", value: records.filter((record) => record.status === "출고 예정").length, detail: "출고 준비", filter: "status:출고 예정" },
+    { label: "납품 완료", value: records.filter((record) => record.status === "납품 완료").length, detail: "완료 처리", filter: "status:납품 완료" },
+    { label: "청구 대기", value: records.filter((record) => record.status === "청구 대기").length, detail: "청구 필요", filter: "status:청구 대기" },
+    { label: "문서 미첨부", value: records.filter((record) => !(record.documents || []).length).length, detail: "증빙 보완", filter: "documents:missing" },
   ];
 }
 
 function filteredInventoryItems() {
+  if (!inventoryState.listActivated) {
+    return [];
+  }
   const query = String(inventoryState.filters.query || "").trim().toLowerCase();
   return inventoryState.items.filter((item) => {
+    if (inventoryState.summaryFilter === "outbound" && !(item.outboundPlanned > 0)) {
+      return false;
+    }
+    if (inventoryState.summaryFilter?.startsWith("status:") && item.status !== inventoryState.summaryFilter.slice("status:".length)) {
+      return false;
+    }
     if (inventoryState.filters.status && item.status !== inventoryState.filters.status) {
       return false;
     }
@@ -2698,13 +2722,22 @@ function filteredInventoryItems() {
     if (!query) {
       return true;
     }
-    return [item.name, item.code, item.no, item.supplier].some((value) => String(value || "").toLowerCase().includes(query));
+    return [item.name, item.code, item.no, item.supplier, item.manufacturer, item.targetModel, item.description].some((value) => String(value || "").toLowerCase().includes(query));
   });
 }
 
 function filteredInventorySales() {
+  if (!inventoryState.listActivated) {
+    return [];
+  }
   const query = String(inventoryState.filters.query || "").trim().toLowerCase();
   return inventoryState.sales.filter((record) => {
+    if (inventoryState.summaryFilter === "documents:missing" && (record.documents || []).length) {
+      return false;
+    }
+    if (inventoryState.summaryFilter?.startsWith("status:") && record.status !== inventoryState.summaryFilter.slice("status:".length)) {
+      return false;
+    }
     if (inventoryState.filters.status && record.status !== inventoryState.filters.status) {
       return false;
     }
@@ -2730,7 +2763,7 @@ function selectedInventorySales() {
 
 function getInventoryPaneWidth() {
   const stored = Number(localStorage.getItem(INVENTORY_LIST_PANE_WIDTH_STORAGE_KEY) || "");
-  return Number.isFinite(stored) && stored >= 360 ? stored : 980;
+  return Number.isFinite(stored) && stored >= 360 ? stored : 1320;
 }
 
 function setInventoryPaneWidth(width) {
@@ -2762,11 +2795,12 @@ function renderInventoryWorkspace() {
   const summaryCards = isSalesView ? inventorySalesSummaryCards(inventoryState.sales) : inventorySummaryCards(inventoryState.items);
   const listGridColumns = isSalesView
     ? "132px minmax(0, 1fr) 96px 108px"
-    : "116px 112px minmax(160px, 1fr) 72px 78px 72px 116px 104px";
+    : "116px 112px minmax(150px, 1fr) 104px 104px minmax(150px, 1fr) 72px 78px 72px 116px 104px";
   const detailTabs = isSalesView
     ? [
         ["overview", "개요"],
         ["movement", "입출고"],
+        ["outbound", "출고"],
         ["purchase", "주문"],
         ["documents", "문서"],
       ]
@@ -2789,6 +2823,26 @@ function renderInventoryWorkspace() {
             </table>
           </section>
         `
+        : inventoryState.activeDetailTab === "outbound"
+          ? `
+            <section class="project-panel">
+              <div class="project-form-grid">
+                <label><span>원주문번호</span><input class="text-field" value="${escapeAttribute(selected.orderNo)}" readonly /></label>
+                <label><span>판매번호</span><input class="text-field" value="${escapeAttribute(selected.no)}" readonly /></label>
+                <label><span>거래처</span><input class="text-field" value="${escapeAttribute(selected.customer)}" readonly /></label>
+                <label><span>품목</span><input class="text-field" value="${escapeAttribute(selected.itemName)}" readonly /></label>
+                <label><span>수량</span><input class="text-field" value="${escapeAttribute(`${selected.quantity}${selected.unit ? ` ${selected.unit}` : ""}`)}" readonly /></label>
+                <label><span>출고 상태</span><input class="text-field" value="${escapeAttribute(selected.outboundStatus)}" readonly /></label>
+                <label><span>지시 상태</span><input class="text-field" value="${escapeAttribute(selected.outboundInstruction?.status || "대기")}" readonly /></label>
+                <label><span>지시자</span><input class="text-field" value="${escapeAttribute(selected.outboundInstruction?.requestedBy || "-")}" readonly /></label>
+                <label><span>지시일</span><input class="text-field" value="${escapeAttribute(selected.outboundInstruction?.requestedAt || "-")}" readonly /></label>
+                <label class="project-form-full"><span>출고 지시 내용</span><textarea class="text-field" readonly>${escapeTextarea(selected.outboundInstruction?.note || "")}</textarea></label>
+              </div>
+              <div class="project-actions">
+                <button type="button" class="primary-button" data-inventory-outbound-command="${escapeAttribute(selected.id)}">창고 출고 지시</button>
+              </div>
+            </section>
+          `
         : inventoryState.activeDetailTab === "purchase"
           ? `
             <section class="project-panel">
@@ -2875,7 +2929,10 @@ function renderInventoryWorkspace() {
                   <label><span>공급처</span><input class="text-field" value="${escapeAttribute(selected.supplier)}" readonly /></label>
                   <label><span>품목명</span><input class="text-field" value="${escapeAttribute(selected.name)}" readonly /></label>
                   <label><span>품번/코드</span><input class="text-field" value="${escapeAttribute(selected.code)}" readonly /></label>
+                  <label><span>제조사</span><input class="text-field" value="${escapeAttribute(selected.manufacturer || "")}" readonly /></label>
+                  <label><span>대상</span><input class="text-field" value="${escapeAttribute(selected.targetModel || "")}" readonly /></label>
                   <label><span>상태</span><input class="text-field" value="${escapeAttribute(selected.status)}" readonly /></label>
+                  <label class="project-form-full"><span>설명</span><textarea class="text-field" readonly>${escapeTextarea(selected.description || "")}</textarea></label>
                 </div>
                 <section class="project-panel" style="margin-top:12px;">
                   <p class="eyebrow">메모</p>
@@ -2891,7 +2948,7 @@ function renderInventoryWorkspace() {
         <label>기간 <input class="text-field" type="date" name="start_date" value="${escapeAttribute(inventoryState.filters.startDate)}" /></label>
         <label>~ <input class="text-field" type="date" name="end_date" value="${escapeAttribute(inventoryState.filters.endDate)}" /></label>
         <label>상태 <select class="text-field" name="status"><option value="">전체</option>${(isSalesView ? ["출고 예정", "납품 완료", "청구 대기"] : ["정상", "발주 필요", "입고 대기"]).map((value) => `<option value="${escapeAttribute(value)}"${inventoryState.filters.status === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
-        <label class="project-filter-query">검색 <input class="text-field" type="search" name="query" value="${escapeAttribute(inventoryState.filters.query)}" placeholder="${isSalesView ? "거래처 / 품목명 / 판매번호 / 주문번호" : "품목명 / 품번 / 코드"}" /></label>
+        <label class="project-filter-query">검색 <input class="text-field" type="search" name="query" value="${escapeAttribute(inventoryState.filters.query)}" placeholder="${isSalesView ? "거래처 / 품목명 / 판매번호 / 주문번호" : "품목명 / 품번 / 코드 / 제조사 / 대상 / 설명"}" /></label>
         <div class="project-filter-actions">
           <button type="submit" class="secondary-button">조회</button>
           <button type="button" class="secondary-button" data-inventory-new>신규</button>
@@ -2899,7 +2956,7 @@ function renderInventoryWorkspace() {
         </div>
       </form>
       <section class="project-summary-grid">
-        ${summaryCards.map((card) => `<article class="metric-card project-summary-card"><p class="eyebrow">${card.label}</p><p class="metric">${card.value}</p><p class="detail">${card.detail}</p></article>`).join("")}
+        ${summaryCards.map((card) => `<article class="metric-card project-summary-card" role="button" tabindex="0" data-inventory-summary-filter="${escapeAttribute(card.filter || "")}"><p class="eyebrow">${card.label}</p><p class="metric">${card.value}</p><p class="detail">${card.detail}</p></article>`).join("")}
       </section>
       <section class="project-layout" style="${inventoryPaneStyle()}">
         <aside class="project-sidebar">
@@ -2919,6 +2976,9 @@ function renderInventoryWorkspace() {
                 <div class="project-list-th"><span>품목번호</span></div>
                 <div class="project-list-th"><span>Part no.</span></div>
                 <div class="project-list-th"><span>ITEM</span></div>
+                <div class="project-list-th"><span>제조사</span></div>
+                <div class="project-list-th"><span>대상</span></div>
+                <div class="project-list-th"><span>설명</span></div>
                 <div class="project-list-th"><span>현재고</span></div>
                 <div class="project-list-th"><span>적정재고</span></div>
                 <div class="project-list-th"><span>발주</span></div>
@@ -2941,6 +3001,9 @@ function renderInventoryWorkspace() {
                       <span class="project-list-no">${item.no}</span>
                       <span>${item.code}</span>
                       <span>${item.name}</span>
+                      <span>${item.manufacturer || "-"}</span>
+                      <span>${item.targetModel || "-"}</span>
+                      <span>${item.description || "-"}</span>
                       <span>${item.onHand}${item.unit ? ` ${item.unit}` : ""}</span>
                       <span>${item.safetyStock}${item.unit ? ` ${item.unit}` : ""}</span>
                       <span>${item.inboundPending ? `${item.inboundPending}${item.unit ? ` ${item.unit}` : ""}` : "-"}</span>
@@ -2992,6 +3055,16 @@ async function handleInventoryClick(event) {
   if (viewButton) {
     inventoryState.viewMode = viewButton.dataset.inventoryViewMode || "stock";
     inventoryState.activeDetailTab = "overview";
+    inventoryState.summaryFilter = "";
+    renderInventoryWorkspace();
+    return true;
+  }
+
+  const summaryCard = event.target.closest("[data-inventory-summary-filter]");
+  if (summaryCard) {
+    inventoryState.summaryFilter = summaryCard.dataset.inventorySummaryFilter || "";
+    inventoryState.listActivated = true;
+    inventoryState.activeDetailTab = "overview";
     renderInventoryWorkspace();
     return true;
   }
@@ -3024,6 +3097,29 @@ async function handleInventoryClick(event) {
       supplier: "",
       query: "",
     };
+    inventoryState.listActivated = false;
+    inventoryState.summaryFilter = "";
+    renderInventoryWorkspace();
+    return true;
+  }
+
+  const outboundCommandButton = event.target.closest("[data-inventory-outbound-command]");
+  if (outboundCommandButton) {
+    const salesId = outboundCommandButton.dataset.inventoryOutboundCommand || "";
+    const record = inventoryState.sales.find((item) => item.id === salesId);
+    if (record) {
+      record.outboundStatus = "출고 지시";
+      record.outboundInstruction = {
+        status: "지시 완료",
+        requestedBy: dashboardState.session?.user?.name || dashboardState.session?.user?.username || "사무실",
+        requestedAt: new Date().toISOString().slice(0, 10),
+        note: "사무실에서 창고 출고 지시를 등록했습니다.",
+      };
+      record.movements = [
+        { date: record.outboundInstruction.requestedAt, type: "출고 지시", quantity: record.quantity, note: record.outboundInstruction.note },
+        ...(record.movements || []),
+      ];
+    }
     renderInventoryWorkspace();
     return true;
   }
@@ -3366,7 +3462,7 @@ function physicalFilterChips(filters = {}) {
   }
   if (filters.sortKey && filters.sortKey !== "updated_at") {
     const column = assetPhysicalColumnDefinitions().find((item) => item.key === filters.sortKey);
-    chips.push(`<button type="button" class="status-badge neutral" data-asset-physical-reset>정렬: ${escapeTextarea(column?.label || filters.sortKey)} ${filters.sortDirection === "asc" ? "오름차순" : "내림차순"}</button>`);
+    chips.push(`<button type="button" class="status-badge neutral" data-asset-sort-reset>정렬: ${escapeTextarea(column?.label || filters.sortKey)} ${filters.sortDirection === "asc" ? "오름차순" : "내림차순"}</button>`);
   }
   return chips.length
     ? `<div class="asset-panel-actions">${chips.join("")}<button type="button" class="secondary-button" data-asset-physical-reset>전체 초기화</button></div>`
@@ -3389,14 +3485,34 @@ function renderAssetSearchAndRestore(selector) {
   }
 }
 
-function scheduleAssetSearchRender(selector) {
-  if (assetSearchRenderTimer) {
-    clearTimeout(assetSearchRenderTimer);
+function syncAssetSearchValue(selector, value) {
+  if (selector === "[data-asset-knowledge-search]") {
+    assetState.knowledgeSearch = value || "";
+    return;
   }
-  assetSearchRenderTimer = setTimeout(() => {
-    assetSearchRenderTimer = null;
+  if (selector === "[data-asset-knowledge-tag-search]") {
+    assetState.knowledgeTagSearch = value || "";
+    return;
+  }
+  if (selector === '[data-asset-physical-filter="query"]') {
+    assetState.physicalFilters = {
+      ...assetState.physicalFilters,
+      query: value || "",
+    };
+  }
+}
+
+function scheduleAssetSearchRender(selector, value) {
+  const currentTimer = assetSearchRenderTimers.get(selector);
+  if (currentTimer) {
+    clearTimeout(currentTimer);
+  }
+  const timer = setTimeout(() => {
+    assetSearchRenderTimers.delete(selector);
+    syncAssetSearchValue(selector, value);
     renderAssetSearchAndRestore(selector);
   }, 120);
+  assetSearchRenderTimers.set(selector, timer);
 }
 
 function assetFilterMenu(column, physicalFilters) {
@@ -3854,19 +3970,27 @@ async function openAssetEditor(kind, id = "") {
     }
 
     if (result.action === "delete") {
-      const response = kind === "physical"
-        ? await window.erpClient.deletePhysicalAssetRecord(result.id)
-        : await window.erpClient.deleteKnowledgeRecord(result.id);
-      applyAssetWorkspacePayload(response.data || {});
-      renderAssetWorkspace();
+      if (kind === "physical") {
+        await window.erpClient.deletePhysicalAssetRecord(result.id);
+      } else {
+        await window.erpClient.deleteKnowledgeRecord(result.id);
+      }
+      if (kind === "knowledge") {
+        assetState.knowledgeSearch = "";
+      }
+      await loadAssetWorkspaceData(true);
       return;
     }
 
-    const response = kind === "physical"
-      ? await window.erpClient.savePhysicalAssetRecord(result.previousId || "", result.record)
-      : await window.erpClient.saveKnowledgeRecord(result.previousId || "", result.record);
-    applyAssetWorkspacePayload(response.data || {});
-    renderAssetWorkspace();
+    if (kind === "physical") {
+      await window.erpClient.savePhysicalAssetRecord(result.previousId || "", result.record);
+    } else {
+      await window.erpClient.saveKnowledgeRecord(result.previousId || "", result.record);
+    }
+    if (kind === "knowledge") {
+      assetState.knowledgeSearch = "";
+    }
+    await loadAssetWorkspaceData(true);
   } catch (error) {
     await showAppMessage(error?.message || "자산관리 저장에 실패했습니다.");
   }
@@ -4215,22 +4339,6 @@ async function handleDeleteAssetEquipment(equipmentId) {
   customerState.selectedEquipmentId = null;
   customerState.equipmentEditorMode = "create";
   customerState.notice = "장비가 삭제되었습니다.";
-  renderCustomerWorkspace();
-}
-
-async function handleRestoreAssetEquipment(equipmentId) {
-  if (!equipmentId || !(await requestAppConfirm("삭제된 장비를 복구할까요?"))) {
-    return;
-  }
-
-  const result = await window.erpClient.restoreAssetEquipment(equipmentId);
-  customerState.selectedCustomer = result.data;
-  invalidateCustomerSearchCache();
-  const selectedAsset = getSelectedAsset(result.data);
-  customerState.selectedAssetId = selectedAsset?.id || customerState.selectedAssetId;
-  customerState.selectedEquipmentId = equipmentId;
-  customerState.equipmentEditorMode = "edit";
-  customerState.notice = "장비를 복구했습니다.";
   renderCustomerWorkspace();
 }
 
@@ -4628,6 +4736,18 @@ dashboardMainPane.addEventListener("click", async (event) => {
     return;
   }
 
+  const assetSortResetButton = event.target.closest("[data-asset-sort-reset]");
+  if (assetSortResetButton) {
+    assetState.physicalFilters = {
+      ...assetState.physicalFilters,
+      sortKey: "updated_at",
+      sortDirection: "desc",
+      openFilter: "",
+    };
+    renderAssetWorkspace();
+    return;
+  }
+
   if (assetState.physicalFilters?.openFilter && !event.target.closest("[data-asset-filter-popover]")) {
     assetState.physicalFilters = {
       ...assetState.physicalFilters,
@@ -4676,12 +4796,6 @@ dashboardMainPane.addEventListener("click", async (event) => {
     closeCustomerContextMenu();
     renderCustomerWorkspace();
     await handleDeleteAssetEquipment(equipmentId);
-    return;
-  }
-
-  const customerEquipmentRestoreButton = event.target.closest("[data-customer-equipment-restore]");
-  if (customerEquipmentRestoreButton) {
-    await handleRestoreAssetEquipment(customerEquipmentRestoreButton.dataset.customerEquipmentRestore || "");
     return;
   }
 
@@ -5270,6 +5384,8 @@ dashboardMainPane.addEventListener("submit", async (event) => {
       supplier: String(data.supplier || ""),
       query: String(data.query || ""),
     };
+    inventoryState.listActivated = true;
+    inventoryState.summaryFilter = "";
     renderInventoryWorkspace();
     return;
   }
@@ -5278,36 +5394,39 @@ dashboardMainPane.addEventListener("submit", async (event) => {
 dashboardMainPane.addEventListener("input", (event) => {
   const knowledgeSearch = event.target.closest("[data-asset-knowledge-search]");
   if (knowledgeSearch) {
-    assetState.knowledgeSearch = knowledgeSearch.value || "";
+    const value = knowledgeSearch.value || "";
+    assetState.knowledgeSearch = value;
     if (assetSearchComposing || event.isComposing) {
       return;
     }
-    scheduleAssetSearchRender("[data-asset-knowledge-search]");
+    scheduleAssetSearchRender("[data-asset-knowledge-search]", value);
     return;
   }
 
   const knowledgeTagSearch = event.target.closest("[data-asset-knowledge-tag-search]");
   if (knowledgeTagSearch) {
-    assetState.knowledgeTagSearch = knowledgeTagSearch.value || "";
+    const value = knowledgeTagSearch.value || "";
+    assetState.knowledgeTagSearch = value;
     if (assetSearchComposing || event.isComposing) {
       return;
     }
-    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]");
+    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]", value);
     return;
   }
 
   const assetFilter = event.target.closest("[data-asset-physical-filter]");
   if (assetFilter) {
     const key = assetFilter.dataset.assetPhysicalFilter || "";
+    const value = assetFilter.value || "";
     assetState.physicalFilters = {
       ...assetState.physicalFilters,
-      [key]: assetFilter.value || "",
+      [key]: value,
     };
     if (assetSearchComposing || event.isComposing) {
       return;
     }
     if (key === "query") {
-      scheduleAssetSearchRender('[data-asset-physical-filter="query"]');
+      scheduleAssetSearchRender('[data-asset-physical-filter="query"]', value);
     } else {
       renderAssetWorkspace();
     }
@@ -5337,27 +5456,30 @@ dashboardMainPane.addEventListener("compositionend", (event) => {
   assetSearchComposing = false;
   const knowledgeSearch = event.target.closest("[data-asset-knowledge-search]");
   if (knowledgeSearch) {
-    assetState.knowledgeSearch = knowledgeSearch.value || "";
-    scheduleAssetSearchRender("[data-asset-knowledge-search]");
+    const value = knowledgeSearch.value || "";
+    assetState.knowledgeSearch = value;
+    scheduleAssetSearchRender("[data-asset-knowledge-search]", value);
     return;
   }
 
   const knowledgeTagSearch = event.target.closest("[data-asset-knowledge-tag-search]");
   if (knowledgeTagSearch) {
-    assetState.knowledgeTagSearch = knowledgeTagSearch.value || "";
-    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]");
+    const value = knowledgeTagSearch.value || "";
+    assetState.knowledgeTagSearch = value;
+    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]", value);
     return;
   }
 
   const assetFilter = event.target.closest("[data-asset-physical-filter]");
   if (assetFilter) {
     const key = assetFilter.dataset.assetPhysicalFilter || "";
+    const value = assetFilter.value || "";
     assetState.physicalFilters = {
       ...assetState.physicalFilters,
-      [key]: assetFilter.value || "",
+      [key]: value,
     };
     if (key === "query") {
-      scheduleAssetSearchRender('[data-asset-physical-filter="query"]');
+      scheduleAssetSearchRender('[data-asset-physical-filter="query"]', value);
     } else {
       renderAssetWorkspace();
     }

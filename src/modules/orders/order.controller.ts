@@ -28,7 +28,7 @@ async function requireOrderSession(request: Request) {
 
 function sendOrderError(response: Response, error: unknown) {
   const message = error instanceof Error ? error.message : "ORDER_OPERATION_FAILED";
-  const statusCode = message === "MERGE_ORDER_REQUIRED" || message === "ORDER_DELETE_REQUIRED" ? 400 : 500;
+  const statusCode = message === "MERGE_ORDER_REQUIRED" || message === "ORDER_DELETE_REQUIRED" || message === "ORDER_REQUIRED" ? 400 : 500;
   sendJson(response, statusCode, {
     success: false,
     errorCode: message,
@@ -74,6 +74,29 @@ export class OrderController {
       sendJson(response, 200, {
         success: true,
         data: result,
+      });
+    } catch (error) {
+      sendOrderError(response, error);
+    }
+  };
+
+  uploadOrderDocument = async (request: Request, response: Response) => {
+    const session = await requireOrderSession(request);
+    if (!session) {
+      sendJson(response, 403, {
+        success: false,
+        errorCode: "ORDER_MANAGE_REQUIRED",
+        message: "주문관리 권한이 필요합니다.",
+      });
+      return;
+    }
+
+    try {
+      const orderId = Array.isArray(request.params.orderId) ? request.params.orderId[0] || "" : request.params.orderId || "";
+      const file = await orderService.uploadOrderDocument(orderId, request.body || {}, session.user.id);
+      sendJson(response, 200, {
+        success: true,
+        data: file,
       });
     } catch (error) {
       sendOrderError(response, error);

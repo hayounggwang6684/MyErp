@@ -1111,6 +1111,9 @@ ipcMain.handle("orders:list", async () => apiRequest("GET", "/api/v1/orders"));
 ipcMain.handle("orders:save", async (_event, orderId, payload) =>
   apiRequest("PUT", `/api/v1/orders/${encodeURIComponent(orderId)}`, payload),
 );
+ipcMain.handle("orders:upload-document", async (_event, orderId, payload) =>
+  apiRequest("POST", `/api/v1/orders/${encodeURIComponent(orderId)}/documents/upload`, payload),
+);
 ipcMain.handle("orders:delete", async (_event, orderId) => apiRequest("DELETE", `/api/v1/orders/${encodeURIComponent(orderId)}`));
 ipcMain.handle("orders:merge", async (_event, payload) => apiRequest("POST", "/api/v1/orders/merge", payload));
 ipcMain.handle("projects:list", async () => apiRequest("GET", "/api/v1/projects"));

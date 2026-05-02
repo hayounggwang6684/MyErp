@@ -166,6 +166,16 @@ async function migrate() {
   await query(`alter table master.customers add column if not exists tax_category text not null default ''`);
   await query(`alter table master.customers add column if not exists bank_account text not null default ''`);
   await query(`alter table master.customers add column if not exists invoice_email text not null default ''`);
+  await query(`create sequence if not exists master.customer_no_seq start with 1 increment by 1`);
+  await query(`
+    select setval(
+      'master.customer_no_seq',
+      greatest(coalesce(max(substring(customer_no from '^CUST-[0-9]{4}-([0-9]+)$')::bigint), 0), 1),
+      coalesce(max(substring(customer_no from '^CUST-[0-9]{4}-([0-9]+)$')::bigint), 0) > 0
+    )
+    from master.customers
+    where customer_no ~ '^CUST-[0-9]{4}-[0-9]+$'
+  `);
 
   await query(`
     create table if not exists master.customer_contacts (
@@ -224,6 +234,8 @@ async function migrate() {
   `);
 
   await query(`alter table master.customer_assets add column if not exists vessel_type text not null default ''`);
+  await query(`alter table master.customer_assets add column if not exists deleted_at timestamptz null`);
+  await query(`alter table master.customer_assets add column if not exists deleted_by text null references identity.users(id) on delete set null`);
 
   await query(`
     create table if not exists master.engine_models (
@@ -620,6 +632,7 @@ async function migrate() {
   await query(`create index if not exists idx_customer_contacts_office_trgm on master.customer_contacts using gin (office_phone gin_trgm_ops)`);
   await query(`create index if not exists idx_customer_addresses_customer on master.customer_addresses(customer_id, address_type)`);
   await query(`create index if not exists idx_customer_assets_customer on master.customer_assets(customer_id, asset_type, created_at desc)`);
+  await query(`create index if not exists idx_customer_assets_deleted on master.customer_assets(customer_id, deleted_at, updated_at desc)`);
   await query(`create index if not exists idx_customer_assets_name_trgm on master.customer_assets using gin (asset_name gin_trgm_ops)`);
   await query(`create index if not exists idx_customer_equipments_asset on master.customer_equipments(asset_id, equipment_type, created_at desc)`);
   await query(`create index if not exists idx_customer_equipments_serial on master.customer_equipments(serial_no)`);
@@ -689,7 +702,7 @@ async function migrate() {
       now()
     from master.customers c
     left join master.customer_contacts cc on cc.customer_id = c.id
-    left join master.customer_assets a on a.customer_id = c.id
+    left join master.customer_assets a on a.customer_id = c.id and a.deleted_at is null
     left join master.customer_equipments e on e.customer_id = c.id and e.deleted_at is null
     group by c.id
     on conflict (customer_id) do update

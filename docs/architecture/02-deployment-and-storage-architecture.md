@@ -75,6 +75,7 @@ BK --> SNAP[백업 저장 영역]
 
 - `file storage`
   - 사진, 견적서 PDF, 청구서 PDF, 송장 이미지, 업무 첨부를 저장한다.
+  - 주문 문서는 `orders/{orderId}/{fileId}-{originalName}` 경로 규칙으로 저장한다.
 - `backup worker`
   - DB dump, WAL 보관, 파일 증분 백업, 로그 순환을 수행한다.
 

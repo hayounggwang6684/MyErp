@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { query, withTransaction, type DbExecutor } from "../../shared/infrastructure/persistence/postgres.js";
 
 type OrderRecord = Record<string, unknown>;
@@ -8,6 +10,29 @@ let orderSchemaColumnsPromise: Promise<void> | null = null;
 
 function text(value: unknown, fallback = "") {
   return String(value ?? fallback).trim();
+}
+
+function sanitizeStorageSegment(value: unknown, fallback = "file") {
+  const normalized = text(value, fallback)
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized || fallback;
+}
+
+function orderFileStorageRoot() {
+  return process.env.ERP_FILE_STORAGE_ROOT || process.env.FILE_STORAGE_ROOT || path.resolve(process.cwd(), "var", "uploads");
+}
+
+function orderFileContentText(input: Record<string, unknown>, buffer: Buffer, mimeType: string) {
+  const ocrSourceText = text(input.ocr_source_text);
+  if (ocrSourceText) {
+    return ocrSourceText;
+  }
+  if (mimeType.startsWith("text/") || mimeType === "application/json") {
+    return buffer.toString("utf8");
+  }
+  return "";
 }
 
 function bool(value: unknown) {
@@ -481,6 +506,84 @@ export class OrderService {
       return {
         orders: await this.listOrdersWith(client),
         projects: await this.listProjectsWith(client),
+      };
+    });
+  }
+
+  async uploadOrderDocument(orderIdInput: string, input: Record<string, unknown>, actorUserId: string) {
+    await this.ensureOrderSchemaColumns();
+    const orderId = orderIdFrom(orderIdInput || input.entity_id);
+    const orderResult = await query(`select id from sales.orders where id = $1 and deleted_at is null`, [orderId]);
+    if (!orderResult.rows[0]) {
+      throw new Error("ORDER_REQUIRED");
+    }
+
+    const fileId = crypto.randomUUID();
+    const versionId = crypto.randomUUID();
+    const originalName = sanitizeStorageSegment(input.original_name, `document-${fileId}.bin`);
+    const mimeType = text(input.mime_type, "application/octet-stream");
+    const contentBase64 = text(input.content_base64);
+    const buffer = contentBase64 ? Buffer.from(contentBase64, "base64") : Buffer.alloc(0);
+    const sizeBytes = Number(input.size_bytes || buffer.byteLength);
+    const sha256 = text(input.sha256) || crypto.createHash("sha256").update(buffer).digest("hex");
+    const storedPath = `orders/${sanitizeStorageSegment(orderId)}/${fileId}-${originalName}`;
+    const absolutePath = path.join(orderFileStorageRoot(), storedPath);
+    const contentText = orderFileContentText(input, buffer, mimeType);
+
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, buffer);
+
+    return withTransaction(async (client) => {
+      await client.query(
+        `insert into files.file_objects (
+           id, domain, entity_type, entity_id, original_name, stored_path, mime_type, size_bytes, sha256, latest_version,
+           scan_status, retention_class, metadata_json, uploaded_by
+         ) values ($1, 'order', 'order_document', $2, $3, $4, $5, $6, $7, 1, 'PENDING', 'STANDARD', $8::jsonb, $9)`,
+        [
+          fileId,
+          orderId,
+          originalName,
+          storedPath,
+          mimeType,
+          sizeBytes,
+          sha256,
+          JSON.stringify({
+            ocr_source_text: contentText,
+            upload_note: text(input.upload_note),
+            storage_rule: "orders/{orderId}/{fileId}-{originalName}",
+          }),
+          actorUserId,
+        ],
+      );
+
+      await client.query(
+        `insert into files.file_versions (
+           id, file_id, version, original_name, mime_type, size_bytes, sha256, stored_path, content_text, uploaded_by
+         ) values ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9)`,
+        [versionId, fileId, originalName, mimeType, sizeBytes, sha256, storedPath, contentText, actorUserId],
+      );
+
+      const linkId = crypto.randomUUID();
+      await client.query(
+        `insert into files.file_links (
+           id, file_id, domain, entity_type, entity_id, created_by
+         ) values ($1, $2, 'order', 'order_document', $3, $4)`,
+        [linkId, fileId, orderId, actorUserId],
+      );
+
+      return {
+        id: fileId,
+        fileId,
+        linkId,
+        domain: "order",
+        entityType: "order_document",
+        entityId: orderId,
+        originalName,
+        storedPath,
+        storagePath: storedPath,
+        mimeType,
+        sizeBytes,
+        sha256,
       };
     });
   }

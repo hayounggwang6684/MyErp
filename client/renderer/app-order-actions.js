@@ -40,7 +40,7 @@ async function handleOrderClick(event) {
   if (documentAddButton) {
     const container = documentAddButton.closest("#order-document-form");
     if (container) {
-      handleAddOrderDocument(container);
+      await handleAddOrderDocument(container);
     }
     return true;
   }
@@ -781,7 +781,7 @@ async function handleOrderFormSubmit(form) {
   }
 
   if (form.id === "order-document-form") {
-    handleAddOrderDocument(form);
+    await handleAddOrderDocument(form);
     return true;
   }
 

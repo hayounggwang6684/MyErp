@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld("erpClient", {
   extractBusinessLicense: (customerId, payload) => ipcRenderer.invoke("customers:extract-business-license", customerId, payload),
   listOrders: () => ipcRenderer.invoke("orders:list"),
   saveOrder: (orderId, payload) => ipcRenderer.invoke("orders:save", orderId, payload),
+  uploadOrderDocument: (orderId, payload) => ipcRenderer.invoke("orders:upload-document", orderId, payload),
   deleteOrder: (orderId) => ipcRenderer.invoke("orders:delete", orderId),
   mergeOrders: (payload) => ipcRenderer.invoke("orders:merge", payload),
   listProjects: () => ipcRenderer.invoke("projects:list"),

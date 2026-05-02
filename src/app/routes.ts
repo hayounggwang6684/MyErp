@@ -236,6 +236,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/v1/customers/:customerId/business-license/extract", customerController.extractBusinessLicense);
   app.get("/api/v1/orders", orderController.listOrders);
   app.put("/api/v1/orders/:orderId", orderController.saveOrder);
+  app.post("/api/v1/orders/:orderId/documents/upload", orderController.uploadOrderDocument);
   app.delete("/api/v1/orders/:orderId", orderController.deleteOrder);
   app.post("/api/v1/orders/merge", orderController.mergeOrders);
   app.get("/api/v1/projects", orderController.listProjects);

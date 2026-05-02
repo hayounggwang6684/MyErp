@@ -32,12 +32,18 @@ function normalizeSearchValue(value: string) {
   return value
     .trim()
     .toLowerCase()
-    .replace(/cat/g, "caterpillar")
+    .replace(/(^|[^0-9a-zA-Z가-힣])cat(?=$|[^0-9a-zA-Z가-힣])/g, "$1caterpillar")
     .replace(/\s+/g, " ");
 }
 
 function compactSearchValue(value: string) {
   return value.replace(/[^0-9a-zA-Z가-힣]+/g, "");
+}
+
+function searchTermsFor(value: string) {
+  const normalized = normalizeSearchValue(value);
+  const compact = compactSearchValue(normalized);
+  return Array.from(new Set([normalized, compact].filter(Boolean)));
 }
 
 function canonicalEquipmentMasterValue(optionType: string, value: unknown) {
@@ -511,8 +517,7 @@ export class CustomerService {
   async listCustomers(search?: string, client?: DbExecutor) {
     const executor: DbExecutor = client ?? { query };
     const normalizedSearch = text(search);
-    const searchTokens = normalizedSearch ? [normalizeSearchValue(normalizedSearch), compactSearchValue(normalizedSearch)].filter(Boolean) : [];
-    const searchValue = searchTokens.length ? `%${Array.from(new Set(searchTokens)).join("%")}%` : null;
+    const searchTerms = normalizedSearch ? searchTermsFor(normalizedSearch) : [];
     type CustomerListRow = {
       id: string;
       customer_no: string;
@@ -534,7 +539,7 @@ export class CustomerService {
       updated_at: Date;
     };
 
-    if (!searchValue) {
+    if (!searchTerms.length) {
       const result = await executor.query<CustomerListRow>(
         `select
            c.id,
@@ -568,6 +573,7 @@ export class CustomerService {
          left join (
            select customer_id, count(*)::int as asset_count
            from master.customer_assets
+           where deleted_at is null
            group by customer_id
          ) ac on ac.customer_id = c.id
          left join (
@@ -623,7 +629,11 @@ export class CustomerService {
          from master.customers c
          join master.customer_search_index si on si.customer_id = c.id
          where c.status = 'ACTIVE'
-           and si.search_normalized ilike $1
+           and exists (
+             select 1
+             from unnest($1::text[]) term
+             where si.search_normalized ilike '%' || term || '%'
+           )
          order by c.updated_at desc, c.customer_name asc
          limit $2
        ) matched
@@ -641,6 +651,7 @@ export class CustomerService {
          select count(*)::int as asset_count
          from master.customer_assets a
          where a.customer_id = matched.id
+           and a.deleted_at is null
        ) ac on true
        left join lateral (
          select count(*)::int as equipment_count
@@ -649,7 +660,7 @@ export class CustomerService {
            and e.deleted_at is null
        ) ec on true
        order by matched.updated_at desc, matched.customer_name asc`,
-      [searchValue, CUSTOMER_SEARCH_LIMIT],
+      [searchTerms, CUSTOMER_SEARCH_LIMIT],
     );
 
     return result.rows.map(mapCustomerSummary);
@@ -712,7 +723,7 @@ export class CustomerService {
            order by cc.is_primary desc, cc.updated_at desc
            limit 1
          ) as primary_contact_phone,
-         (select count(*)::int from master.customer_assets a where a.customer_id = c.id) as asset_count,
+         (select count(*)::int from master.customer_assets a where a.customer_id = c.id and a.deleted_at is null) as asset_count,
          (select count(*)::int from master.customer_equipments e where e.customer_id = c.id and e.deleted_at is null) as equipment_count
        from master.customers c
        where c.id = $1`,
@@ -777,6 +788,7 @@ export class CustomerService {
         `select *
          from master.customer_assets
          where customer_id = $1
+           and deleted_at is null
          order by updated_at desc, asset_name asc`,
         [customerId],
       ),
@@ -932,8 +944,8 @@ export class CustomerService {
       );
 
       const customerId = crypto.randomUUID();
-      const customerNoResult = await client.query<{ count: string }>(`select count(*)::text as count from master.customers`);
-      const customerNo = `CUST-${new Date().getFullYear()}-${String(Number(customerNoResult.rows[0]?.count || "0") + 1).padStart(4, "0")}`;
+      const customerNoResult = await client.query<{ next_no: string }>(`select nextval('master.customer_no_seq')::text as next_no`);
+      const customerNo = `CUST-${new Date().getFullYear()}-${String(Number(customerNoResult.rows[0]?.next_no || "1")).padStart(4, "0")}`;
 
       await client.query(
         `insert into master.customers (
@@ -1279,7 +1291,7 @@ export class CustomerService {
   async updateAsset(assetId: string, input: Record<string, unknown>, actorUserId: string) {
     return withTransaction(async (client) => {
       const assetResult = await client.query<{ id: string; customer_id: string }>(
-        `select id, customer_id from master.customer_assets where id = $1`,
+        `select id, customer_id from master.customer_assets where id = $1 and deleted_at is null`,
         [assetId],
       );
       const asset = assetResult.rows[0];
@@ -1323,10 +1335,10 @@ export class CustomerService {
     });
   }
 
-  async deleteAsset(assetId: string) {
+  async deleteAsset(assetId: string, actorUserId: string) {
     return withTransaction(async (client) => {
       const assetResult = await client.query<{ id: string; customer_id: string }>(
-        `select id, customer_id from master.customer_assets where id = $1`,
+        `select id, customer_id from master.customer_assets where id = $1 and deleted_at is null`,
         [assetId],
       );
       const asset = assetResult.rows[0];
@@ -1334,8 +1346,49 @@ export class CustomerService {
         return null;
       }
 
-      await client.query(`delete from master.customer_equipments where asset_id = $1`, [assetId]);
-      await client.query(`delete from master.customer_assets where id = $1`, [assetId]);
+      const equipmentResult = await client.query<{ id: string; customer_id: string; asset_id: string }>(
+        `select id, customer_id, asset_id
+         from master.customer_equipments
+         where asset_id = $1
+           and deleted_at is null`,
+        [assetId],
+      );
+      const beforeSnapshots = new Map<string, Record<string, unknown> | null>();
+      for (const equipment of equipmentResult.rows) {
+        beforeSnapshots.set(equipment.id, await this.getEquipmentSnapshot(equipment.id, client));
+      }
+
+      await client.query(
+        `update master.customer_equipments
+         set deleted_at = now(),
+             deleted_by = $2,
+             updated_at = now(),
+             updated_by = $2
+         where asset_id = $1
+           and deleted_at is null`,
+        [assetId, actorUserId],
+      );
+      await client.query(
+        `update master.customer_assets
+         set deleted_at = now(),
+             deleted_by = $2,
+             updated_at = now(),
+             updated_by = $2
+         where id = $1
+           and deleted_at is null`,
+        [assetId, actorUserId],
+      );
+
+      for (const equipment of equipmentResult.rows) {
+        await this.recordEquipmentHistory(client, {
+          equipmentId: equipment.id,
+          customerId: equipment.customer_id,
+          assetId: equipment.asset_id,
+          action: "DELETE",
+          beforeSnapshot: beforeSnapshots.get(equipment.id) || {},
+          actorUserId,
+        });
+      }
 
       await this.refreshCustomerSearchIndex(asset.customer_id, client);
       return this.getCustomerById(asset.customer_id, client);
@@ -1345,7 +1398,7 @@ export class CustomerService {
   async addEquipment(assetId: string, input: Record<string, unknown>, actorUserId: string) {
     return withTransaction(async (client) => {
       const assetResult = await client.query<{ id: string; customer_id: string }>(
-        `select id, customer_id from master.customer_assets where id = $1`,
+        `select id, customer_id from master.customer_assets where id = $1 and deleted_at is null`,
         [assetId],
       );
       const asset = assetResult.rows[0];
@@ -1698,9 +1751,10 @@ export class CustomerService {
     return models.find((item) => item.id === id) || null;
   }
 
-  async listEquipmentMasterOptions(optionType?: string) {
+  async listEquipmentMasterOptions(optionType?: string, client?: DbExecutor) {
+    const executor: DbExecutor = client ?? { query };
     const type = text(optionType);
-    const result = await query<{
+    const result = await executor.query<{
       id: string;
       option_type: string;
       option_value: string;
@@ -1715,7 +1769,8 @@ export class CustomerService {
     return result.rows.map(mapEquipmentMasterOption);
   }
 
-  async upsertEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string) {
+  async upsertEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string, client?: DbExecutor) {
+    const executor: DbExecutor = client ?? { query };
     const optionType = text(input.option_type || input.field);
     const optionValue = canonicalEquipmentMasterValue(optionType, input.option_value || input.value);
     if (!optionType || !optionValue) {
@@ -1723,7 +1778,7 @@ export class CustomerService {
     }
 
     const id = `equipment-master-${optionType}-${optionValue.toLowerCase().replace(/[^0-9a-z]+/g, "-") || crypto.randomUUID()}`;
-    const result = await query<{
+    const result = await executor.query<{
       id: string;
       option_type: string;
       option_value: string;
@@ -1740,14 +1795,15 @@ export class CustomerService {
     return result.rows[0] ? mapEquipmentMasterOption(result.rows[0]) : null;
   }
 
-  async deactivateEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string) {
+  async deactivateEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string, client?: DbExecutor) {
+    const executor: DbExecutor = client ?? { query };
     const optionType = text(input.option_type || input.field);
     const optionValue = canonicalEquipmentMasterValue(optionType, input.option_value || input.value);
     if (!optionType || !optionValue) {
-      return this.listEquipmentMasterOptions(optionType);
+      return this.listEquipmentMasterOptions(optionType, client);
     }
 
-    await query(
+    await executor.query(
       `update master.equipment_master_options
        set status = 'INACTIVE',
            updated_at = now(),
@@ -1756,7 +1812,7 @@ export class CustomerService {
          and lower(option_value) = lower($2)`,
       [optionType, optionValue, actorUserId],
     );
-    return this.listEquipmentMasterOptions(optionType);
+    return this.listEquipmentMasterOptions(optionType, client);
   }
 
   async mergeEquipmentMasterOption(input: Record<string, unknown>, actorUserId: string) {
@@ -1768,7 +1824,7 @@ export class CustomerService {
     }
 
     return withTransaction(async (client) => {
-      await this.upsertEquipmentMasterOption({ option_type: optionType, option_value: toValue }, actorUserId);
+      await this.upsertEquipmentMasterOption({ option_type: optionType, option_value: toValue }, actorUserId, client);
       const fieldColumn =
         optionType === "equipment_unit"
           ? "equipment_name"
@@ -1810,8 +1866,8 @@ export class CustomerService {
           await this.refreshCustomerSearchIndex(equipment.customer_id, client);
         }
       }
-      await this.deactivateEquipmentMasterOption({ option_type: optionType, option_value: fromValue }, actorUserId);
-      return this.listEquipmentMasterOptions(optionType);
+      await this.deactivateEquipmentMasterOption({ option_type: optionType, option_value: fromValue }, actorUserId, client);
+      return this.listEquipmentMasterOptions(optionType, client);
     });
   }
 

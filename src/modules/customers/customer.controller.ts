@@ -256,7 +256,7 @@ export class CustomerController {
       return;
     }
 
-    const detail = await customerService.deleteAsset(String(request.params.assetId || ""));
+    const detail = await customerService.deleteAsset(String(request.params.assetId || ""), session.user.id);
     if (!detail) {
       sendJson(response, 404, {
         success: false,

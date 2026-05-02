@@ -162,6 +162,16 @@ async function handleProjectClick(event) {
     return true;
   }
 
+  const templatePicker = event.target.closest("[data-project-template-picker]");
+  if (templatePicker) {
+    const templateId = templatePicker.value || "";
+    const template = templateId === "__new__" ? null : loadQuotationTemplates().find((item) => item.id === templateId);
+    projectState.templateModal.draft = template ? structuredClone(template) : blankQuotationTemplate();
+    projectState.templateModal.selectedTemplateId = template?.id || "";
+    renderProjectWorkspace();
+    return true;
+  }
+
   const templateSaveButton = event.target.closest("[data-project-template-save]");
   if (templateSaveButton) {
     const form = document.getElementById("project-template-form");
@@ -369,6 +379,16 @@ async function handleProjectFormSubmit(form) {
 }
 
 function handleProjectChange(event) {
+  const templatePicker = event.target.closest("[data-project-template-picker]");
+  if (templatePicker) {
+    const templateId = templatePicker.value || "";
+    const template = templateId === "__new__" ? null : loadQuotationTemplates().find((item) => item.id === templateId);
+    projectState.templateModal.draft = template ? structuredClone(template) : blankQuotationTemplate();
+    projectState.templateModal.selectedTemplateId = template?.id || "";
+    renderProjectWorkspace();
+    return true;
+  }
+
   if (event.target.closest("#project-template-form")) {
     const form = document.getElementById("project-template-form");
     if (form instanceof HTMLFormElement) {

@@ -95,6 +95,7 @@ function emptyOrderDocumentDraft() {
     attachmentPath: "",
     attachmentName: "",
     fileId: "",
+    storagePath: "",
     notes: "",
   };
 }
@@ -106,6 +107,7 @@ function readOrderDocumentDraft(container) {
     attachmentPath: container.querySelector('[name="attachment_path"]')?.value || "",
     attachmentName: container.querySelector('[name="attachment_name"]')?.value || "",
     fileId: container.querySelector('[name="file_id"]')?.value || "",
+    storagePath: container.querySelector('[name="storage_path"]')?.value || "",
     notes: container.querySelector('[name="document_notes"]')?.value || "",
   };
 }
@@ -115,24 +117,36 @@ async function handlePickOrderDocumentFile(container) {
   const attachmentPathField = container.querySelector('[name="attachment_path"]');
   const attachmentNameField = container.querySelector('[name="attachment_name"]');
   const fileIdField = container.querySelector('[name="file_id"]');
+  const storagePathField = container.querySelector('[name="storage_path"]');
   const attachmentLabelField = container.querySelector('[name="attachment_label"]');
   const orderId = orderIdField?.value || "";
+  if (!orderId) {
+    await showAppMessage("주문 저장 후 파일을 업로드하세요.");
+    return;
+  }
   const result = await window.erpClient.selectDocumentFile();
   if (result.canceled || !result.file) {
     return;
   }
 
-  const uploadResult = await window.erpClient.uploadFile({
-    domain: "order",
-    entity_type: "order_document",
-    entity_id: orderId,
-    original_name: result.file.originalName || "document",
-    mime_type: result.file.mimeType || "application/octet-stream",
-    size_bytes: result.file.sizeBytes || 0,
-    sha256: result.file.sha256 || "",
-    content_base64: result.file.contentBase64 || "",
-    upload_note: `orders/${orderId || "draft"}/${result.file.originalName || "document"}`,
-  });
+  let uploadResult;
+  try {
+    uploadResult = await window.erpClient.uploadOrderDocument(orderId, {
+      domain: "order",
+      entity_type: "order_document",
+      entity_id: orderId,
+      original_name: result.file.originalName || "document",
+      mime_type: result.file.mimeType || "application/octet-stream",
+      size_bytes: result.file.sizeBytes || 0,
+      sha256: result.file.sha256 || "",
+      content_base64: result.file.contentBase64 || "",
+      upload_note: `orders/${orderId || "draft"}/${result.file.originalName || "document"}`,
+    });
+  } catch (error) {
+    await showAppMessage(error?.message || "파일 업로드에 실패했습니다.");
+    return;
+  }
+  const uploadedFile = uploadResult.data || {};
 
   if (attachmentPathField) {
     attachmentPathField.value = result.file.path || "";
@@ -141,7 +155,10 @@ async function handlePickOrderDocumentFile(container) {
     attachmentNameField.value = result.file.originalName || "";
   }
   if (fileIdField) {
-    fileIdField.value = uploadResult.data?.id || "";
+    fileIdField.value = uploadedFile.id || uploadedFile.fileId || "";
+  }
+  if (storagePathField) {
+    storagePathField.value = uploadedFile.storedPath || uploadedFile.storagePath || "";
   }
   if (attachmentLabelField) {
     attachmentLabelField.value = result.file.originalName || result.file.path || "선택된 파일 없음";
@@ -149,7 +166,7 @@ async function handlePickOrderDocumentFile(container) {
   readOrderDocumentDraft(container);
 }
 
-function handleAddOrderDocument(container) {
+async function handleAddOrderDocument(container) {
   readOrderDocumentDraft(container);
   const orderId = container.querySelector('[name="order_id"]')?.value || "";
   const typeCode = container.querySelector('[name="document_type"]')?.value || "ETC";
@@ -157,14 +174,19 @@ function handleAddOrderDocument(container) {
   const attachmentPath = container.querySelector('[name="attachment_path"]')?.value || "";
   const attachmentName = container.querySelector('[name="attachment_name"]')?.value || "";
   const fileId = container.querySelector('[name="file_id"]')?.value || "";
+  const storagePath = container.querySelector('[name="storage_path"]')?.value || "";
   const type = orderDocumentType(typeCode);
   const order = orderState.orders.find((item) => item.id === orderId);
   if (!order) {
-    showAppMessage("주문 저장 후 문서를 등록하세요.");
+    await showAppMessage("주문 저장 후 문서를 등록하세요.");
     return;
   }
   if (!typeCode || !documentName) {
-    showAppMessage("문서 종류와 문서명을 입력하세요.");
+    await showAppMessage("문서 종류와 문서명을 입력하세요.");
+    return;
+  }
+  if (!window.erpClient?.saveOrder) {
+    await showAppMessage("서버 저장 기능을 사용할 수 없어 문서를 등록할 수 없습니다.");
     return;
   }
 
@@ -177,19 +199,33 @@ function handleAddOrderDocument(container) {
     target: attachmentPath,
     fileName: attachmentName,
     fileId,
+    storagePath,
     notes: String(container.querySelector('[name="document_notes"]')?.value || ""),
     internalTab: attachmentPath ? "" : type.internalTab,
     createdAt: new Date().toISOString().slice(0, 10),
   };
+  const nextOrder = {
+    ...order,
+    documents: [...documents, nextDocument],
+  };
+
+  try {
+    const serverResult = await window.erpClient.saveOrder(orderId, nextOrder);
+    applyOrderProjectServerData(serverResult?.data || {});
+  } catch (error) {
+    await showAppMessage(error?.message || "문서 정보를 서버에 저장하지 못했습니다.");
+    return;
+  }
+
   orderState.orders = orderState.orders.map((item) =>
     item.id === orderId
       ? {
           ...item,
-          documents: [...documents, nextDocument],
+          documents: nextOrder.documents,
         }
       : item,
   );
-  orderState.notice = `${nextDocument.id} 문서가 추가되었습니다.`;
+  orderState.notice = `${nextDocument.id} 문서가 서버에 저장되었습니다.`;
   orderState.documentAddPanelOpen = false;
   orderState.documentDraft = emptyOrderDocumentDraft();
   renderOrderWorkspace();
@@ -243,6 +279,7 @@ function renderOrderDocumentCreatePanel(order) {
       <input type="hidden" name="attachment_path" value="${escapeAttribute(draft.attachmentPath || "")}" />
       <input type="hidden" name="attachment_name" value="${escapeAttribute(draft.attachmentName || "")}" />
       <input type="hidden" name="file_id" value="${escapeAttribute(draft.fileId || "")}" />
+      <input type="hidden" name="storage_path" value="${escapeAttribute(draft.storagePath || "")}" />
       <div class="order-document-add-panel-head">
         <strong>문서 추가</strong>
         <button type="button" class="ghost-button" data-order-document-cancel-add>취소</button>
