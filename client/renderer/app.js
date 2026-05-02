@@ -209,6 +209,7 @@ let assetColumnResizeState = null;
 let assetSearchComposing = false;
 const assetSearchRenderTimers = new Map();
 let inventoryPaneResizeState = null;
+const INVENTORY_SALES_ORDER_SUBTYPES = new Set(["", "부품판매", "엔진판매"]);
 let inventoryState = {
   viewMode: "stock",
   listActivated: false,
@@ -301,62 +302,7 @@ let inventoryState = {
       note: "감속기 정기 점검",
     },
   ],
-  sales: [
-    {
-      id: "SALE-001",
-      no: "SAL-2026-0418-01",
-      customer: "태성해운",
-      itemName: "Caterpillar 3412 연료필터 세트",
-      code: "CAT-3412-FLT",
-      status: "출고 예정",
-      plannedDate: "2026-04-26",
-      quantity: 2,
-      unit: "EA",
-      amount: 680000,
-      outboundStatus: "출고 준비",
-      outboundInstruction: { status: "대기", requestedBy: "", requestedAt: "", note: "" },
-      orderNo: "OR-2026-004",
-      documents: [{ type: "거래명세서", name: "태성해운 필터 판매 명세", id: "DOC-SALE-001" }],
-      movements: [{ date: "2026-04-24", type: "출고 준비", quantity: 2, note: "포장 대기" }],
-      note: "엔진 오버홀 부품 판매",
-    },
-    {
-      id: "SALE-002",
-      no: "SAL-2026-0419-02",
-      customer: "남해플랜트서비스",
-      itemName: "AVR 모듈",
-      code: "AVR-MOD-220",
-      status: "납품 완료",
-      plannedDate: "2026-04-22",
-      quantity: 1,
-      unit: "EA",
-      amount: 420000,
-      outboundStatus: "완료",
-      outboundInstruction: { status: "완료", requestedBy: "김관리", requestedAt: "2026-04-20", note: "현장 직접 전달 완료" },
-      orderNo: "OR-2026-011",
-      documents: [{ type: "발주서", name: "AVR 모듈 발주서", id: "DOC-SALE-002" }],
-      movements: [{ date: "2026-04-20", type: "출고", quantity: 1, note: "현장 직접 전달" }],
-      note: "긴급 교체 건",
-    },
-    {
-      id: "SALE-003",
-      no: "SAL-2026-0420-01",
-      customer: "영광기업",
-      itemName: "가스켓 세트",
-      code: "GSK-SET-77",
-      status: "청구 대기",
-      plannedDate: "2026-04-28",
-      quantity: 3,
-      unit: "SET",
-      amount: 195000,
-      outboundStatus: "출고 완료",
-      outboundInstruction: { status: "지시 완료", requestedBy: "박영업", requestedAt: "2026-04-22", note: "정비팀 수령 일정에 맞춰 출고" },
-      orderNo: "OR-2026-013",
-      documents: [],
-      movements: [{ date: "2026-04-23", type: "출고", quantity: 3, note: "정비팀 수령" }],
-      note: "정기 점검 소모품",
-    },
-  ],
+  sales: [],
 };
 let customerState = {
   loaded: false,
@@ -2698,6 +2644,77 @@ function inventorySalesSummaryCards(records) {
   ];
 }
 
+function inventoryOrderType(order = {}) {
+  return String(order.businessType || order.business_type || order.requestType || order.request_type || "").trim();
+}
+
+function inventoryOrderSubtype(order = {}) {
+  return String(order.orderSubtype || order.order_subtype || order.subtype || order.orderSubType || "").trim();
+}
+
+function isInventorySalesOrder(order = {}) {
+  if (inventoryOrderType(order) !== "판매") {
+    return false;
+  }
+  return INVENTORY_SALES_ORDER_SUBTYPES.has(inventoryOrderSubtype(order));
+}
+
+function inventoryDocumentsForOrder(order = {}) {
+  return Array.isArray(order.documents) ? order.documents : [];
+}
+
+function inventoryDocumentName(record = {}, type = "", fallback = "-") {
+  const documents = Array.isArray(record.documents) ? record.documents : [];
+  const document = documents.find((item) => [item.type, item.typeLabel, item.documentType, item.documentName].some((value) => String(value || "") === type));
+  return document?.name || document?.documentName || document?.fileName || fallback;
+}
+
+function inventorySalesRecordFromOrder(order = {}) {
+  const subtype = inventoryOrderSubtype(order);
+  const documents = inventoryDocumentsForOrder(order);
+  return {
+    id: String(order.id || order.orderId || ""),
+    no: String(order.managementNumber || order.management_number || order.id || ""),
+    orderNo: String(order.id || order.orderNo || order.order_no || ""),
+    customer: String(order.customer || order.customerName || order.customer_name || order.shipOwner || ""),
+    itemName: String(order.description || order.orderSummary || order.order_summary || order.equipment || "판매 주문"),
+    code: String(order.managementNumber || order.management_number || order.id || ""),
+    subtype: subtype || "판매",
+    status: String(order.status || "출고 예정"),
+    plannedDate: String(order.confirmationDate || order.confirmation_date || order.requestDate || order.request_date || ""),
+    quantity: Number(order.quantity || 1),
+    unit: String(order.unit || "건"),
+    amount: Number(order.amount || 0),
+    outboundStatus: String(order.outboundStatus || order.outbound_status || order.status || "출고 준비"),
+    outboundInstruction: order.outboundInstruction || order.outbound_instruction || { status: "대기", requestedBy: "", requestedAt: "", note: "" },
+    documents,
+    movements: Array.isArray(order.movements) ? order.movements : [],
+    note: String(order.notes || order.note || ""),
+  };
+}
+
+function inventorySalesRecords() {
+  const records = [];
+  if (typeof orderState !== "undefined" && Array.isArray(orderState.orders)) {
+    records.push(
+      ...orderState.orders
+        .filter((order) => !order.mergedInto && !order.deletedAt)
+        .filter(isInventorySalesOrder)
+        .map(inventorySalesRecordFromOrder),
+    );
+  }
+  records.push(...(Array.isArray(inventoryState.sales) ? inventoryState.sales : []));
+
+  const byId = new Map();
+  for (const record of records) {
+    const key = record.id || record.orderNo || record.no;
+    if (key && !byId.has(key)) {
+      byId.set(key, record);
+    }
+  }
+  return Array.from(byId.values());
+}
+
 function filteredInventoryItems() {
   if (!inventoryState.listActivated) {
     return [];
@@ -2731,7 +2748,7 @@ function filteredInventorySales() {
     return [];
   }
   const query = String(inventoryState.filters.query || "").trim().toLowerCase();
-  return inventoryState.sales.filter((record) => {
+  return inventorySalesRecords().filter((record) => {
     if (inventoryState.summaryFilter === "documents:missing" && (record.documents || []).length) {
       return false;
     }
@@ -2747,7 +2764,7 @@ function filteredInventorySales() {
     if (!query) {
       return true;
     }
-    return [record.no, record.customer, record.itemName, record.code, record.orderNo].some((value) => String(value || "").toLowerCase().includes(query));
+    return [record.no, record.customer, record.itemName, record.code, record.orderNo, record.subtype].some((value) => String(value || "").toLowerCase().includes(query));
   });
 }
 
@@ -2790,9 +2807,17 @@ function renderInventoryViewToggle() {
 
 function renderInventoryWorkspace() {
   const isSalesView = inventoryState.viewMode === "sales";
+  if (isSalesView && typeof loadOrderProjectStateFromServer === "function") {
+    void loadOrderProjectStateFromServer().then((loaded) => {
+      if (loaded && dashboardState.activeTab === "inventory" && inventoryState.viewMode === "sales") {
+        renderInventoryWorkspace();
+      }
+    });
+  }
+  const salesRecords = inventorySalesRecords();
   const items = isSalesView ? filteredInventorySales() : filteredInventoryItems();
   const selected = isSalesView ? selectedInventorySales() : selectedInventoryItem();
-  const summaryCards = isSalesView ? inventorySalesSummaryCards(inventoryState.sales) : inventorySummaryCards(inventoryState.items);
+  const summaryCards = isSalesView ? inventorySalesSummaryCards(salesRecords) : inventorySummaryCards(inventoryState.items);
   const listGridColumns = isSalesView
     ? "132px minmax(0, 1fr) 96px 108px"
     : "116px 112px minmax(150px, 1fr) 104px 104px minmax(150px, 1fr) 72px 78px 72px 116px 104px";
@@ -2829,6 +2854,7 @@ function renderInventoryWorkspace() {
               <div class="project-form-grid">
                 <label><span>원주문번호</span><input class="text-field" value="${escapeAttribute(selected.orderNo)}" readonly /></label>
                 <label><span>판매번호</span><input class="text-field" value="${escapeAttribute(selected.no)}" readonly /></label>
+                <label><span>세부구분</span><input class="text-field" value="${escapeAttribute(selected.subtype || "판매")}" readonly /></label>
                 <label><span>거래처</span><input class="text-field" value="${escapeAttribute(selected.customer)}" readonly /></label>
                 <label><span>품목</span><input class="text-field" value="${escapeAttribute(selected.itemName)}" readonly /></label>
                 <label><span>수량</span><input class="text-field" value="${escapeAttribute(`${selected.quantity}${selected.unit ? ` ${selected.unit}` : ""}`)}" readonly /></label>
@@ -2861,7 +2887,7 @@ function renderInventoryWorkspace() {
               <section class="project-panel">
                 <table class="data-table project-table">
                   <thead><tr><th>문서종류</th><th>문서명</th><th>문서ID</th></tr></thead>
-                  <tbody>${selected.documents.map((row) => `<tr><td>${row.type}</td><td>${row.name}</td><td>${row.id}</td></tr>`).join("") || '<tr><td colspan="3">등록된 문서가 없습니다.</td></tr>'}</tbody>
+                  <tbody>${selected.documents.map((row) => `<tr><td>${row.typeLabel || row.type || row.documentType || "-"}</td><td>${row.name || row.documentName || row.fileName || inventoryDocumentName(selected, row.typeLabel || row.type || row.documentType || "", "-")}</td><td>${row.id || row.fileId || "-"}</td></tr>`).join("") || '<tr><td colspan="3">등록된 문서가 없습니다.</td></tr>'}</tbody>
                 </table>
               </section>
             `
@@ -2869,6 +2895,7 @@ function renderInventoryWorkspace() {
               <section class="project-panel">
                 <div class="project-form-grid">
                   <label><span>판매번호</span><input class="text-field" value="${escapeAttribute(selected.no)}" readonly /></label>
+                  <label><span>세부구분</span><input class="text-field" value="${escapeAttribute(selected.subtype || "판매")}" readonly /></label>
                   <label><span>거래처</span><input class="text-field" value="${escapeAttribute(selected.customer)}" readonly /></label>
                   <label><span>품목명</span><input class="text-field" value="${escapeAttribute(selected.itemName)}" readonly /></label>
                   <label><span>품번/코드</span><input class="text-field" value="${escapeAttribute(selected.code)}" readonly /></label>
@@ -2948,7 +2975,7 @@ function renderInventoryWorkspace() {
         <label>기간 <input class="text-field" type="date" name="start_date" value="${escapeAttribute(inventoryState.filters.startDate)}" /></label>
         <label>~ <input class="text-field" type="date" name="end_date" value="${escapeAttribute(inventoryState.filters.endDate)}" /></label>
         <label>상태 <select class="text-field" name="status"><option value="">전체</option>${(isSalesView ? ["출고 예정", "납품 완료", "청구 대기"] : ["정상", "발주 필요", "입고 대기"]).map((value) => `<option value="${escapeAttribute(value)}"${inventoryState.filters.status === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
-        <label class="project-filter-query">검색 <input class="text-field" type="search" name="query" value="${escapeAttribute(inventoryState.filters.query)}" placeholder="${isSalesView ? "거래처 / 품목명 / 판매번호 / 주문번호" : "품목명 / 품번 / 코드 / 제조사 / 대상 / 설명"}" /></label>
+        <label class="project-filter-query">검색 <input class="text-field" type="search" name="query" value="${escapeAttribute(inventoryState.filters.query)}" placeholder="${isSalesView ? "거래처 / 품목명 / 판매번호 / 주문번호 / 엔진판매" : "품목명 / 품번 / 코드 / 제조사 / 대상 / 설명"}" /></label>
         <div class="project-filter-actions">
           <button type="submit" class="secondary-button">조회</button>
           <button type="button" class="secondary-button" data-inventory-new>신규</button>
@@ -2968,7 +2995,7 @@ function renderInventoryWorkspace() {
             ${isSalesView
               ? `
                 <div class="project-list-th"><span>판매번호</span></div>
-                <div class="project-list-th"><span>품목/거래처</span></div>
+                <div class="project-list-th"><span>구분/품목/거래처</span></div>
                 <div class="project-list-th"><span>예정일</span></div>
                 <div class="project-list-th"><span>상태</span></div>
               `
@@ -2993,7 +3020,7 @@ function renderInventoryWorkspace() {
                   ${isSalesView
                     ? `
                       <span class="project-list-no">${item.no}</span>
-                      <span>${item.itemName} · ${item.customer}</span>
+                      <span>${item.subtype || "판매"} · ${item.itemName} · ${item.customer}</span>
                       <span>${item.plannedDate}</span>
                       <span><span class="status-badge ${item.status === "출고 예정" ? "warn" : item.status === "청구 대기" ? "neutral" : "ok"}">${item.status}</span></span>
                     `

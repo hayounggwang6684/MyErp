@@ -60,6 +60,7 @@ var projectState = {
     open: false,
     selectedTemplateId: "",
     draft: null,
+    contextMenu: { visible: false, x: 0, y: 0, target: "" },
   },
   filters: defaultProjectFilters(),
   projects: [
@@ -426,6 +427,13 @@ const PROJECT_TEMPLATE_INFO_FIELDS = [
   { key: "currency", label: "통화" },
   { key: "writer", label: "작성자" },
 ];
+const PROJECT_TEMPLATE_SUPPLIER_FIELD_MAP = {
+  등록번호: "supplierRegistrationNo",
+  상호: "supplierName",
+  성명: "supplierRepresentative",
+  주소: "supplierAddress",
+  "업태/종목": "supplierBusinessType",
+};
 
 function projectSelectOptions(options, selectedValue = "") {
   return options.map((option) => `<option value="${escapeAttribute(option)}"${option === selectedValue ? " selected" : ""}>${escapeTextarea(option)}</option>`).join("");
@@ -444,7 +452,27 @@ function quotationCategoryOptions(selectedValue = "") {
 }
 
 function isQuotationPricedItem(item = {}) {
-  return ["", "수리항목", "부품항목"].includes(String(item.category || ""));
+  return ["수리항목", "부품항목"].includes(String(item.category || ""));
+}
+
+function isQuotationDescriptionAmountItem(item = {}) {
+  return String(item.category || "") === "항목설명";
+}
+
+function isQuotationSubtotalItem(item = {}) {
+  return String(item.category || "") === "소계";
+}
+
+function isQuotationBlankItem(item = {}) {
+  return String(item.category || "") === "빈칸";
+}
+
+function isQuotationQuantityInputItem(item = {}) {
+  return isQuotationPricedItem(item) || isQuotationDescriptionAmountItem(item);
+}
+
+function isQuotationAmountInputItem(item = {}) {
+  return isQuotationQuantityInputItem(item) || isQuotationSubtotalItem(item);
 }
 
 function blankQuotationTemplate() {
@@ -546,7 +574,7 @@ function quotationNumber(project) {
 function emptyQuotationItem() {
   return {
     category: "",
-    lineNo: 1,
+    lineNo: "",
     code: "",
     description: "",
     quantity: 1,
@@ -567,20 +595,34 @@ function currentProjectQuotationWriter(project = null) {
 }
 
 function normalizeQuotationItem(item, index = 0) {
+  const category = String(item?.category || "");
+  const lineNo = item?.lineNo ?? item?.line_no ?? "";
   const quantity = Number(item?.quantity ?? 1) || 0;
   const unitPrice = Number(item?.unitPrice ?? item?.unit_price ?? 0) || 0;
-  const amount =
-    Number(item?.amount ?? 0) ||
-    quantity * unitPrice;
+  const inputAmount = Number(item?.amount ?? 0) || 0;
+  const amount = isQuotationPricedItem({ category }) && !inputAmount ? quantity * unitPrice : inputAmount;
+  if (isQuotationBlankItem({ category })) {
+    return {
+      category,
+      lineNo,
+      code: "",
+      description: "",
+      quantity: 0,
+      unit: "",
+      unitPrice: 0,
+      amount: 0,
+      remark: "",
+    };
+  }
   return {
-    category: String(item?.category || ""),
-    lineNo: Number(item?.lineNo ?? item?.line_no ?? index + 1) || index + 1,
+    category,
+    lineNo,
     code: String(item?.code || ""),
     description: String(item?.description ?? item?.itemName ?? ""),
-    quantity,
-    unit: String(item?.unit ?? item?.spec ?? ""),
-    unitPrice,
-    amount,
+    quantity: isQuotationQuantityInputItem({ category }) ? quantity : 0,
+    unit: isQuotationQuantityInputItem({ category }) ? String(item?.unit ?? item?.spec ?? "") : "",
+    unitPrice: isQuotationQuantityInputItem({ category }) ? unitPrice : 0,
+    amount: isQuotationAmountInputItem({ category }) ? amount : 0,
     remark: String(item?.remark ?? item?.note ?? ""),
   };
 }
@@ -632,6 +674,7 @@ function normalizeQuotationDraft(quotation, project = null) {
 
 function readQuotationTemplateDraftFromForm(form, { requireName = false } = {}) {
   const data = Object.fromEntries(new FormData(form).entries());
+  const currentDraft = normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
   const name = String(data.template_name || "").trim();
   if (requireName && !name) {
     return null;
@@ -679,7 +722,7 @@ function readQuotationTemplateDraftFromForm(form, { requireName = false } = {}) 
       fontSize: Number(data.font_size || 11),
     },
     document: {
-      title: String(data.document_title || "청구서"),
+      title: String(data.document_title || currentDraft.document.title || "청구서"),
       logoText: String(data.logo_text || "SUNJIN"),
       logoImageUrl: String(data.logo_image_url || ""),
       logoPosition: String(data.logo_position || "left"),
@@ -772,6 +815,14 @@ function closeProjectQuotationContextMenu() {
 
 function openProjectQuotationContextMenu(x, y) {
   projectState.quotationModal.contextMenu = { visible: true, x: Math.max(8, x), y: Math.max(8, y) };
+}
+
+function closeProjectTemplateContextMenu() {
+  projectState.templateModal.contextMenu = { visible: false, x: 0, y: 0, target: "" };
+}
+
+function openProjectTemplateContextMenu(x, y, target) {
+  projectState.templateModal.contextMenu = { visible: true, x: Math.max(8, x), y: Math.max(8, y), target: String(target || "") };
 }
 
 function openProjectQuotationPreview(html) {
@@ -878,6 +929,7 @@ function openProjectTemplateModal() {
     open: true,
     selectedTemplateId: templates[0]?.id || "",
     draft: templates[0] ? structuredClone(templates[0]) : blankQuotationTemplate(),
+    contextMenu: { visible: false, x: 0, y: 0, target: "" },
   };
 }
 
@@ -886,6 +938,7 @@ function closeProjectTemplateModal() {
     open: false,
     selectedTemplateId: "",
     draft: null,
+    contextMenu: { visible: false, x: 0, y: 0, target: "" },
   };
 }
 
@@ -923,21 +976,22 @@ function readQuotationDraftFromForm(form) {
   const data = Object.fromEntries(new FormData(form).entries());
   const items = Array.from(form.querySelectorAll("[data-quotation-item-row]")).map((row) => {
     const index = row.dataset.quotationItemRow;
-    const itemIndex = Number(index);
+    const category = String(form.querySelector(`[name="item_category_${index}"]`)?.value || "");
     const quantity = Number(form.querySelector(`[name="item_quantity_${index}"]`)?.value || 0);
     const unitPrice = Number(form.querySelector(`[name="item_unit_price_${index}"]`)?.value || 0);
     const inputAmount = Number(form.querySelector(`[name="item_amount_${index}"]`)?.value || 0);
-    return {
-      category: String(form.querySelector(`[name="item_category_${index}"]`)?.value || ""),
-      lineNo: itemIndex + 1,
+    const item = {
+      category,
+      lineNo: String(form.querySelector(`[name="item_line_no_${index}"]`)?.value || ""),
       code: String(form.querySelector(`[name="item_code_${index}"]`)?.value || ""),
       description: String(form.querySelector(`[name="item_description_${index}"]`)?.value || ""),
       quantity,
       unit: String(form.querySelector(`[name="item_unit_${index}"]`)?.value || ""),
       unitPrice,
-      amount: inputAmount || quantity * unitPrice,
+      amount: isQuotationPricedItem({ category }) && !inputAmount ? quantity * unitPrice : inputAmount,
       remark: String(form.querySelector(`[name="item_remark_${index}"]`)?.value || ""),
     };
+    return normalizeQuotationItem(item);
   });
   const totals = calculateQuotationTotals(items);
   return normalizeQuotationDraft(
@@ -985,13 +1039,14 @@ function quotationAmountText(value, currency = "KRW") {
 function renderTemplateLogoMark(document = {}, kind = "primary") {
   const imageUrl = kind === "extra" ? document.extraLogoImageUrl : document.logoImageUrl;
   const text = kind === "extra" ? document.extraLogoText : document.logoText;
+  const fieldName = kind === "extra" ? "extraLogoText" : "logoText";
   const className = kind === "extra" ? "project-template-extra-logo" : "project-template-brand-block";
   if (imageUrl) {
-    return `<div class="${className} image-logo"><img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(text || "logo")}" /><span>${escapeTextarea(text || "")}</span></div>`;
+    return `<div class="${className} image-logo"><img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(text || "logo")}" /><span contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "")}</span></div>`;
   }
   return kind === "extra"
-    ? `<div class="${className}">${escapeTextarea(text || "")}</div>`
-    : `<div class="${className}"><strong>${escapeTextarea(text || "SUNJIN")}</strong><small>SHERWOOD</small></div>`;
+    ? `<div class="${className}" contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "")}</div>`
+    : `<div class="${className}"><strong contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "SUNJIN")}</strong><small>SHERWOOD</small></div>`;
 }
 
 function quotationPrintHtml(quotation) {
@@ -1017,17 +1072,19 @@ function quotationPrintHtml(quotation) {
   ];
   const tableRows = (normalized.items || []).map((item) => {
     const rowClass = quotationItemPrintClass(item);
-    const priced = isQuotationPricedItem(item);
+    const showQuantity = isQuotationQuantityInputItem(item);
+    const showAmount = isQuotationAmountInputItem(item);
+    const blank = isQuotationBlankItem(item);
     return `
       <tr class="${rowClass}">
-        <td>${escapeTextarea(item.category || "")}</td>
-        <td>${escapeTextarea(item.lineNo || "")}</td>
-        <td>${escapeTextarea(item.code || "")}</td>
-        <td>${escapeTextarea(item.description || "")}</td>
-        <td>${priced ? escapeTextarea(item.quantity || "") : ""}</td>
-        <td>${priced ? escapeTextarea(item.unit || "") : ""}</td>
-        <td>${priced ? money(item.unitPrice) : ""}</td>
-        <td>${priced || rowClass === "subtotal-row" ? money(item.amount) : escapeTextarea(item.remark || "")}</td>
+        <td>${blank ? "" : escapeTextarea(item.category || "")}</td>
+        <td>${blank ? "" : escapeTextarea(item.lineNo || "")}</td>
+        <td>${blank ? "" : escapeTextarea(item.code || "")}</td>
+        <td>${blank ? "" : escapeTextarea(item.description || "")}</td>
+        <td>${showQuantity ? escapeTextarea(item.quantity || "") : ""}</td>
+        <td>${showQuantity ? escapeTextarea(item.unit || "") : ""}</td>
+        <td>${showQuantity ? money(item.unitPrice) : ""}</td>
+        <td>${showAmount ? money(item.amount) : blank ? "" : escapeTextarea(item.remark || "")}</td>
       </tr>
     `;
   }).join("");
@@ -1326,23 +1383,35 @@ function selectedProject() {
   if (!projectState.hasSearched) {
     return null;
   }
-  const projects = visibleProjects();
+  const projects = filteredProjects();
   return projects.find((project) => project.id === projectState.selectedProjectId) || projects[0] || null;
+}
+
+function isDefaultProjectSearch(filters) {
+  const defaultFilters = defaultProjectFilters();
+  return (
+    String(filters.startDate || "") === defaultFilters.startDate &&
+    String(filters.endDate || "") === defaultFilters.endDate &&
+    !String(filters.status || "") &&
+    !String(filters.query || "").trim()
+  );
 }
 
 function filteredProjects() {
   if (!projectState.hasSearched) {
     return [];
   }
-  const query = String(projectState.filters.query || "").trim().toLowerCase();
+  const filters = projectState.filters || defaultProjectFilters();
+  const query = String(filters.query || "").trim().toLowerCase();
+  const shouldApplyDateFilter = !isDefaultProjectSearch(filters);
   return visibleProjects().filter((project) => {
-    if (projectState.filters.startDate && project.quoteDate < projectState.filters.startDate) {
+    if (shouldApplyDateFilter && filters.startDate && project.quoteDate < filters.startDate) {
       return false;
     }
-    if (projectState.filters.endDate && project.quoteDate > projectState.filters.endDate) {
+    if (shouldApplyDateFilter && filters.endDate && project.quoteDate > filters.endDate) {
       return false;
     }
-    if (projectState.filters.status && project.status !== projectState.filters.status) {
+    if (filters.status && project.status !== filters.status) {
       return false;
     }
     if (query) {
@@ -1620,19 +1689,27 @@ function renderProjectQuotationModal() {
             <section class="project-quotation-sheet">
               <div class="project-quotation-items">
                 <div class="project-quotation-item-head"><span>구분</span><span>번호</span><span>코드</span><span>내용</span><span>수량</span><span>단위</span><span>단가</span><span>금액</span><span>remark</span></div>
-                ${(quotation.items || []).map((item, index) => `
-                  <div class="project-quotation-item-row${selectedItemIndexes.includes(index) ? " selected" : ""}" data-quotation-item-row="${index}" data-project-quotation-item-select="${index}" title="Ctrl/Cmd+클릭 다중 선택, 우클릭 메뉴">
-                    <select class="text-field" name="item_category_${index}">${quotationCategoryOptions(item.category || "")}</select>
-                    <input class="text-field" name="item_line_no_${index}" value="${escapeAttribute(String(item.lineNo || index + 1))}" readonly />
-                    <input class="text-field" name="item_code_${index}" value="${escapeAttribute(item.code || "")}" />
-                    <input class="text-field" name="item_description_${index}" value="${escapeAttribute(item.description || "")}" />
-                    <input class="text-field" type="number" name="item_quantity_${index}" value="${escapeAttribute(String(item.quantity ?? 1))}" />
-                    <input class="text-field" name="item_unit_${index}" value="${escapeAttribute(item.unit || "")}" />
-                    <input class="text-field" type="number" name="item_unit_price_${index}" value="${escapeAttribute(String(item.unitPrice ?? 0))}" />
-                    <input class="text-field" type="number" name="item_amount_${index}" value="${escapeAttribute(String(item.amount || Number(item.quantity || 0) * Number(item.unitPrice || 0)))}" />
-                    <input class="text-field" name="item_remark_${index}" value="${escapeAttribute(item.remark || "")}" />
-                  </div>
-                `).join("")}
+                ${(quotation.items || []).map((item, index) => {
+                  const normalizedItem = normalizeQuotationItem(item, index);
+                  const blank = isQuotationBlankItem(normalizedItem);
+                  const quantityEnabled = isQuotationQuantityInputItem(normalizedItem);
+                  const amountEnabled = isQuotationAmountInputItem(normalizedItem);
+                  const readOnlyQuantity = quantityEnabled ? "" : " readonly";
+                  const readOnlyAmount = amountEnabled ? "" : " readonly";
+                  return `
+                    <div class="project-quotation-item-row${selectedItemIndexes.includes(index) ? " selected" : ""}" data-quotation-item-row="${index}" data-project-quotation-item-select="${index}" title="Ctrl/Cmd+클릭 다중 선택, 우클릭 메뉴">
+                      <select class="text-field" name="item_category_${index}">${quotationCategoryOptions(normalizedItem.category || "")}</select>
+                      <input class="text-field" name="item_line_no_${index}" value="${blank ? "" : escapeAttribute(String(normalizedItem.lineNo || ""))}"${blank ? " readonly" : ""} />
+                      <input class="text-field" name="item_code_${index}" value="${blank ? "" : escapeAttribute(normalizedItem.code || "")}"${blank ? " readonly" : ""} />
+                      <input class="text-field" name="item_description_${index}" value="${blank ? "" : escapeAttribute(normalizedItem.description || "")}" data-project-quotation-description-input${blank ? " readonly" : ""} onkeydown="return handleProjectQuotationDescriptionKeydown(event)" />
+                      <input class="text-field" type="number" name="item_quantity_${index}" value="${quantityEnabled ? escapeAttribute(String(normalizedItem.quantity ?? 0)) : ""}"${readOnlyQuantity} />
+                      <input class="text-field" name="item_unit_${index}" value="${quantityEnabled ? escapeAttribute(normalizedItem.unit || "") : ""}"${readOnlyQuantity} />
+                      <input class="text-field" type="number" name="item_unit_price_${index}" value="${quantityEnabled ? escapeAttribute(String(normalizedItem.unitPrice ?? 0)) : ""}"${readOnlyQuantity} />
+                      <input class="text-field" type="number" name="item_amount_${index}" value="${amountEnabled ? escapeAttribute(String(normalizedItem.amount || (isQuotationPricedItem(normalizedItem) ? Number(normalizedItem.quantity || 0) * Number(normalizedItem.unitPrice || 0) : 0))) : ""}"${readOnlyAmount} />
+                      <input class="text-field" name="item_remark_${index}" value="${blank ? "" : escapeAttribute(normalizedItem.remark || "")}"${blank ? " readonly" : ""} />
+                    </div>
+                  `;
+                }).join("")}
               </div>
               <div class="project-quotation-item-toolbar">
                 <button type="button" class="secondary-button" data-project-quotation-item-add>행 추가</button>
@@ -1730,7 +1807,7 @@ function renderProjectTemplateCanvasPreview(template) {
   ];
   const previewRows = (normalized.items || [emptyQuotationItem()]).slice(0, 12);
   return `
-    <div class="project-template-canvas${normalized.page.orientation === "portrait" ? " portrait" : ""}" style="
+    <div class="project-template-canvas${normalized.page.orientation === "portrait" ? " portrait" : ""}" data-project-template-context-target="canvas" style="
       --template-accent:${escapeAttribute(normalized.styles.accentColor)};
       --template-header-bg:${escapeAttribute(normalized.styles.headerBackground)};
       --template-font-size:${escapeAttribute(String(normalized.styles.fontSize))}px;
@@ -1742,19 +1819,19 @@ function renderProjectTemplateCanvasPreview(template) {
     ">
       <div class="project-template-page">
         <div class="project-template-page-inner">
-          <div class="project-template-document-head logo-primary-${escapeAttribute(document.logoPosition || "left")} logo-extra-${escapeAttribute(document.extraLogoPosition || "right")}">
+          <div class="project-template-document-head logo-primary-${escapeAttribute(document.logoPosition || "left")} logo-extra-${escapeAttribute(document.extraLogoPosition || "right")}" data-project-template-context-target="header">
             ${renderTemplateLogoMark(document, "primary")}
-            <h2>${escapeTextarea(document.title || "청구서")}</h2>
+            <h2 contenteditable="true" data-project-template-inline-field="documentTitle">${escapeTextarea(document.title || "청구서")}</h2>
             ${renderTemplateLogoMark(document, "extra")}
           </div>
-          <div class="project-template-tagline">${escapeTextarea(document.tagline || "")}</div>
+          <div class="project-template-tagline" contenteditable="true" data-project-template-inline-field="tagline" data-project-template-context-target="header">${escapeTextarea(document.tagline || "")}</div>
           <div class="project-template-preview-top">
             <div class="project-template-meta-table">
               ${previewMetaRows.map(([label, value]) => `<span class="project-template-meta-label">${escapeTextarea(label)}</span><span>${escapeTextarea(value)}</span>`).join("")}
             </div>
             ${
               document.showSupplierBox
-                ? `<div class="project-template-supplier-table"><b>공급자</b>${supplierRows.map(([label, value]) => `<span>${escapeTextarea(label)}</span><i>${escapeTextarea(value)}</i>`).join("")}</div>`
+                ? `<div class="project-template-supplier-table" data-project-template-context-target="supplier"><b>공급자</b>${supplierRows.map(([label, value]) => `<span>${escapeTextarea(label)}</span><i contenteditable="true" data-project-template-inline-field="${escapeAttribute(PROJECT_TEMPLATE_SUPPLIER_FIELD_MAP[label] || "")}">${escapeTextarea(value)}</i>`).join("")}</div>`
                 : ""
             }
           </div>
@@ -1795,6 +1872,28 @@ function renderProjectTemplateCanvasPreview(template) {
   `;
 }
 
+function renderProjectTemplateContextMenu() {
+  const contextMenu = projectState.templateModal.contextMenu || { visible: false, x: 0, y: 0, target: "" };
+  if (!contextMenu.visible) {
+    return "";
+  }
+  const headerActions = `
+    <button type="button" class="project-context-menu-button" data-project-template-context-action="header-add-extra-logo">추가 로고 넣기</button>
+    <button type="button" class="project-context-menu-button" data-project-template-context-action="header-remove-extra-logo">추가 로고 삭제</button>
+    <button type="button" class="project-context-menu-button" data-project-template-context-action="header-toggle-tagline">상단 문구 추가/삭제</button>
+    <button type="button" class="project-context-menu-button" data-project-template-context-action="header-reset">상단 기본값</button>
+  `;
+  const supplierActions = `
+    <button type="button" class="project-context-menu-button" data-project-template-context-action="supplier-toggle">공급자 박스 추가/삭제</button>
+    <button type="button" class="project-context-menu-button" data-project-template-context-action="supplier-reset">공급자 기본값</button>
+  `;
+  return `
+    <div class="project-context-menu" style="left:${contextMenu.x}px; top:${contextMenu.y}px;">
+      ${contextMenu.target === "supplier" ? supplierActions : headerActions}
+    </div>
+  `;
+}
+
 function renderProjectTemplateModal() {
   if (!projectState.templateModal.open) {
     return "";
@@ -1811,34 +1910,31 @@ function renderProjectTemplateModal() {
         <div class="project-template-layout">
           <aside class="project-template-sidebar">
             <section class="project-template-sidebar-section">
-              <div class="project-template-sidebar-header">
-                <strong>템플릿</strong>
-                <button type="button" class="secondary-button" data-project-template-new>신규</button>
-              </div>
-              <button type="button" class="project-template-preset-button" data-project-template-preset="invoice">청구서 기본형 불러오기</button>
-              <label>저장 양식
+              <label>템플릿 목록
                 <select class="text-field" data-project-template-picker>
-                  <option value="__new__">+ 신규 템플릿</option>
                   ${templates.map((template) => `<option value="${escapeAttribute(template.id)}"${template.id === draft.id ? " selected" : ""}>${escapeTextarea(template.name || "이름 없음")}</option>`).join("")}
+                  <option value="__new__"${draft.id ? "" : " selected"}>새 템플릿</option>
                 </select>
               </label>
-              <div class="project-template-current">
-                <span>현재 선택</span>
-                <input class="text-field project-template-current-name" form="project-template-form" name="template_name" value="${escapeAttribute(draft.name || "")}" placeholder="템플릿명" />
-                <small>${draft.page.orientation === "portrait" ? "A4 세로" : "A4 가로"} / ${draft.document.title || "문서"} / ${draft.items.length}개 기본 행</small>
-              </div>
-            </section>
-            <section class="project-template-sidebar-section">
-              <div class="project-template-sidebar-header">
-                <strong>설계 영역</strong>
-                <span>빠른 이동</span>
-              </div>
-              <div class="project-template-designer-nav">
-                <span>문서</span>
-                <span>상단</span>
-                <span>공급자</span>
-                <span>정보표</span>
-                <span>품목표</span>
+              <label>템플릿 제목
+                <input class="text-field project-template-current-name" form="project-template-form" name="template_name" value="${escapeAttribute(draft.name || "")}" placeholder="템플릿 제목" />
+              </label>
+              <label>참조 템플릿
+                <select class="text-field" data-project-template-reference>
+                  <option value="">선택 안 함</option>
+                  <option value="__invoice__">청구서 기본형</option>
+                  ${templates.map((template) => `<option value="${escapeAttribute(template.id)}">참조: ${escapeTextarea(template.name || "이름 없음")}</option>`).join("")}
+                </select>
+              </label>
+              <div class="project-template-orientation-toggle" role="radiogroup" aria-label="용지 방향">
+                <label>
+                  <input type="radio" form="project-template-form" name="page_orientation" value="landscape" data-project-template-orientation${draft.page.orientation === "landscape" ? " checked" : ""} />
+                  <span>가로</span>
+                </label>
+                <label>
+                  <input type="radio" form="project-template-form" name="page_orientation" value="portrait" data-project-template-orientation${draft.page.orientation === "portrait" ? " checked" : ""} />
+                  <span>세로</span>
+                </label>
               </div>
             </section>
             <section class="project-template-sidebar-section">
@@ -1860,22 +1956,10 @@ function renderProjectTemplateModal() {
               <span>${draft.page.orientation === "portrait" ? "A4 세로" : "A4 가로"}</span>
             </div>
             ${renderProjectTemplateCanvasPreview(draft)}
+            ${renderProjectTemplateContextMenu()}
           </section>
           <form id="project-template-form" class="project-template-form project-template-editor">
             <input type="hidden" name="template_id" value="${escapeAttribute(draft.id || "")}" />
-            <section class="project-template-section">
-              <h4>문서 기본</h4>
-              <p>문서명, 용지 방향, 출력 제목을 정합니다.</p>
-              <div class="project-template-grid two">
-                <label>문서 제목 <input class="text-field" name="document_title" value="${escapeAttribute(draft.document.title || "")}" /></label>
-                <label>용지 방향
-                  <select class="text-field" name="page_orientation">
-                    <option value="landscape"${draft.page.orientation === "landscape" ? " selected" : ""}>가로</option>
-                    <option value="portrait"${draft.page.orientation === "portrait" ? " selected" : ""}>세로</option>
-                  </select>
-                </label>
-              </div>
-            </section>
             <section class="project-template-section">
               <h4>상단 양식</h4>
               <p>로고 텍스트와 문서 상단 안내 문구를 설정합니다.</p>

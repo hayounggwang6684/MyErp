@@ -1,4 +1,48 @@
 async function handleProjectClick(event) {
+  const templateContextActionButton = event.target.closest("[data-project-template-context-action]");
+  if (templateContextActionButton) {
+    const action = templateContextActionButton.dataset.projectTemplateContextAction || "";
+    const draft = normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
+    if (action === "header-add-extra-logo") {
+      draft.document.extraLogoText = draft.document.extraLogoText || "STX · PULLMASTER";
+      draft.document.extraLogoPosition = draft.document.extraLogoPosition || "right";
+    } else if (action === "header-remove-extra-logo") {
+      draft.document.extraLogoText = "";
+      draft.document.extraLogoImageUrl = "";
+    } else if (action === "header-toggle-tagline") {
+      draft.document.tagline = draft.document.tagline ? "" : "고객의 마음으로 일하는 욕·해상용 엔진/부속 공급, 수리전문점";
+    } else if (action === "header-reset") {
+      const base = blankQuotationTemplate().document;
+      draft.document.logoText = base.logoText;
+      draft.document.logoImageUrl = "";
+      draft.document.logoPosition = base.logoPosition;
+      draft.document.extraLogoText = base.extraLogoText;
+      draft.document.extraLogoImageUrl = "";
+      draft.document.extraLogoPosition = base.extraLogoPosition;
+      draft.document.tagline = base.tagline;
+    } else if (action === "supplier-toggle") {
+      draft.document.showSupplierBox = !draft.document.showSupplierBox;
+    } else if (action === "supplier-reset") {
+      const base = blankQuotationTemplate().document;
+      draft.document.showSupplierBox = true;
+      draft.document.supplierName = base.supplierName;
+      draft.document.supplierRegistrationNo = base.supplierRegistrationNo;
+      draft.document.supplierRepresentative = base.supplierRepresentative;
+      draft.document.supplierAddress = base.supplierAddress;
+      draft.document.supplierBusinessType = base.supplierBusinessType;
+    }
+    projectState.templateModal.draft = normalizeQuotationTemplate(draft);
+    closeProjectTemplateContextMenu();
+    renderProjectWorkspace();
+    return true;
+  }
+
+  if (projectState.templateModal.contextMenu?.visible && !event.target.closest(".project-context-menu")) {
+    closeProjectTemplateContextMenu();
+    renderProjectWorkspace();
+    return true;
+  }
+
   const quotationContextActionButton = event.target.closest("[data-project-quotation-context-action]");
   if (quotationContextActionButton) {
     const action = quotationContextActionButton.dataset.projectQuotationContextAction || "";
@@ -162,16 +206,6 @@ async function handleProjectClick(event) {
     return true;
   }
 
-  const templatePicker = event.target.closest("[data-project-template-picker]");
-  if (templatePicker) {
-    const templateId = templatePicker.value || "";
-    const template = templateId === "__new__" ? null : loadQuotationTemplates().find((item) => item.id === templateId);
-    projectState.templateModal.draft = template ? structuredClone(template) : blankQuotationTemplate();
-    projectState.templateModal.selectedTemplateId = template?.id || "";
-    renderProjectWorkspace();
-    return true;
-  }
-
   const templateSaveButton = event.target.closest("[data-project-template-save]");
   if (templateSaveButton) {
     const form = document.getElementById("project-template-form");
@@ -231,6 +265,38 @@ async function handleProjectClick(event) {
   return false;
 }
 
+function handleProjectQuotationDescriptionKeydown(event) {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+    return true;
+  }
+  const input = event.target.closest("[data-project-quotation-description-input]");
+  const form = document.getElementById("project-quotation-form");
+  if (!(input instanceof HTMLInputElement) || !(form instanceof HTMLFormElement)) {
+    return true;
+  }
+  event.preventDefault();
+  const match = input.name.match(/_(\d+)$/);
+  const index = match ? Number(match[1]) : -1;
+  if (index < 0) {
+    return false;
+  }
+  const draft = readQuotationDraftFromForm(form);
+  const insertIndex = Math.min(index + 1, draft.items.length);
+  draft.items.splice(insertIndex, 0, emptyQuotationItem());
+  projectState.quotationModal.draft = normalizeQuotationDraft(draft, selectedProject());
+  projectState.quotationModal.selectedItemIndexes = [insertIndex];
+  projectState.quotationModal.dirty = true;
+  renderProjectWorkspace();
+  setTimeout(() => {
+    const nextInput = document.querySelector(`[name="item_description_${insertIndex}"]`);
+    if (nextInput instanceof HTMLInputElement) {
+      nextInput.focus();
+      nextInput.select();
+    }
+  }, 0);
+  return false;
+}
+
 async function handleProjectDoubleClick(event) {
   const quotationRow = event.target.closest("[data-project-quotation-open]");
   if (!quotationRow) {
@@ -245,6 +311,15 @@ async function handleProjectDoubleClick(event) {
 }
 
 function handleProjectContextMenu(event) {
+  const templateTarget = event.target.closest("[data-project-template-context-target]");
+  if (templateTarget && projectState.templateModal.open) {
+    event.preventDefault();
+    const target = templateTarget.dataset.projectTemplateContextTarget || "header";
+    openProjectTemplateContextMenu(event.clientX, event.clientY, target === "supplier" ? "supplier" : "header");
+    renderProjectWorkspace();
+    return true;
+  }
+
   const quotationItemRow = event.target.closest("[data-project-quotation-item-select]");
   if (!quotationItemRow) {
     return false;
@@ -278,6 +353,7 @@ async function handleProjectFormSubmit(form) {
       query: String(data.query || ""),
     };
     projectState.hasSearched = true;
+    projectState.selectedProjectId = filteredProjects()[0]?.id || "";
     renderProjectWorkspace();
     return true;
   }
@@ -379,12 +455,44 @@ async function handleProjectFormSubmit(form) {
 }
 
 function handleProjectChange(event) {
+  const orientationToggle = event.target.closest("[data-project-template-orientation]");
+  if (orientationToggle) {
+    const form = document.getElementById("project-template-form");
+    const draft = form instanceof HTMLFormElement ? readQuotationTemplateDraftFromForm(form) : normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
+    draft.page.orientation = String(orientationToggle.value || "landscape");
+    projectState.templateModal.draft = normalizeQuotationTemplate(draft);
+    closeProjectTemplateContextMenu();
+    renderProjectWorkspace();
+    return true;
+  }
+
   const templatePicker = event.target.closest("[data-project-template-picker]");
   if (templatePicker) {
     const templateId = templatePicker.value || "";
     const template = templateId === "__new__" ? null : loadQuotationTemplates().find((item) => item.id === templateId);
     projectState.templateModal.draft = template ? structuredClone(template) : blankQuotationTemplate();
     projectState.templateModal.selectedTemplateId = template?.id || "";
+    renderProjectWorkspace();
+    return true;
+  }
+
+  const templateReference = event.target.closest("[data-project-template-reference]");
+  if (templateReference) {
+    const referenceId = templateReference.value || "";
+    const form = document.getElementById("project-template-form");
+    const currentName =
+      form instanceof HTMLFormElement
+        ? String(new FormData(form).get("template_name") || "").trim()
+        : String(projectState.templateModal.draft?.name || "").trim();
+    const source =
+      referenceId === "__invoice__"
+        ? invoiceQuotationTemplatePreset()
+        : loadQuotationTemplates().find((item) => item.id === referenceId);
+    const draft = source ? structuredClone(source) : blankQuotationTemplate();
+    draft.id = "";
+    draft.name = currentName || "";
+    projectState.templateModal.draft = normalizeQuotationTemplate(draft);
+    projectState.templateModal.selectedTemplateId = "";
     renderProjectWorkspace();
     return true;
   }
@@ -495,6 +603,50 @@ function handleProjectChange(event) {
 }
 
 function handleProjectInput(event) {
+  const inlineTemplateField = event.target.closest("[data-project-template-inline-field]");
+  if (inlineTemplateField) {
+    const field = inlineTemplateField.dataset.projectTemplateInlineField || "";
+    const value = String(inlineTemplateField.textContent || "").trim();
+    const draft = normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
+    const templateDocument = { ...draft.document };
+    if (field === "documentTitle") {
+      templateDocument.title = value;
+    } else if (field === "logoText") {
+      templateDocument.logoText = value;
+    } else if (field === "extraLogoText") {
+      templateDocument.extraLogoText = value;
+    } else if (field === "tagline") {
+      templateDocument.tagline = value;
+    } else if (field === "supplierRegistrationNo") {
+      templateDocument.supplierRegistrationNo = value;
+    } else if (field === "supplierName") {
+      templateDocument.supplierName = value;
+    } else if (field === "supplierRepresentative") {
+      templateDocument.supplierRepresentative = value;
+    } else if (field === "supplierAddress") {
+      templateDocument.supplierAddress = value;
+    } else if (field === "supplierBusinessType") {
+      templateDocument.supplierBusinessType = value;
+    }
+    const formFieldNameByTemplateField = {
+      logoText: "logo_text",
+      extraLogoText: "extra_logo_text",
+      tagline: "tagline",
+      supplierRegistrationNo: "supplier_registration_no",
+      supplierName: "supplier_name",
+      supplierRepresentative: "supplier_representative",
+      supplierAddress: "supplier_address",
+      supplierBusinessType: "supplier_business_type",
+    };
+    const form = document.getElementById("project-template-form");
+    const formFieldName = formFieldNameByTemplateField[field];
+    if (form instanceof HTMLFormElement && formFieldName && form.elements[formFieldName]) {
+      form.elements[formFieldName].value = value;
+    }
+    projectState.templateModal.draft = normalizeQuotationTemplate({ ...draft, document: templateDocument });
+    return true;
+  }
+
   if (event.target.closest("#project-template-form")) {
     const form = document.getElementById("project-template-form");
     if (form instanceof HTMLFormElement) {
@@ -516,6 +668,10 @@ function handleProjectInput(event) {
     const index = match ? Number(match[1]) : -1;
     if (index >= 0 && !amountInputTarget) {
       const form = document.getElementById("project-quotation-form");
+      const category = String(form?.querySelector(`[name="item_category_${index}"]`)?.value || "");
+      if (!isQuotationQuantityInputItem({ category })) {
+        return true;
+      }
       const quantity = Number(form?.querySelector(`[name="item_quantity_${index}"]`)?.value || 0);
       const unitPrice = Number(form?.querySelector(`[name="item_unit_price_${index}"]`)?.value || 0);
       const amountInput = form?.querySelector(`[name="item_amount_${index}"]`);

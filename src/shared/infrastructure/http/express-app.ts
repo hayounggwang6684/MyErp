@@ -15,8 +15,8 @@ export function createApp() {
     }),
   );
 
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ extended: false, limit: "50mb" }));
+  app.use(express.json({ limit: "200mb" }));
+  app.use(express.urlencoded({ extended: false, limit: "200mb" }));
 
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
