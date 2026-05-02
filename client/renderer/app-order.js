@@ -6,6 +6,10 @@ const ORDER_CUSTOMER_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const ORDER_LOOKUP_CACHE_MAX = 40;
 const DEFAULT_ORDER_COLUMN_WIDTHS = [92, 132, 116, 82, 58, 220, 96, 112, 128, 96, 96];
 const ORDER_TYPES = ["공사", "판매"];
+const ORDER_SUBTYPE_OPTIONS = {
+  공사: ["부품복합", "수리단독"],
+  판매: ["부품판매", "엔진판매"],
+};
 const ORDER_STATUS_STAGES = {
   공사: ["견적", "발주", "공사중", "준공", "청구", "완공"],
   판매: ["견적", "발주", "미입고", "입고", "출고", "납품", "청구", "완료"],
@@ -344,6 +348,19 @@ function normalizeOrderType(value) {
   return "공사";
 }
 
+function orderSubtypeOptions(orderType) {
+  return ORDER_SUBTYPE_OPTIONS[normalizeOrderType(orderType)] || ORDER_SUBTYPE_OPTIONS.공사;
+}
+
+function defaultOrderSubtype(orderType) {
+  return normalizeOrderType(orderType) === "판매" ? "부품판매" : "부품복합";
+}
+
+function normalizeOrderSubtype(orderType, value) {
+  const options = orderSubtypeOptions(orderType);
+  return options.includes(value) ? value : defaultOrderSubtype(orderType);
+}
+
 function orderStatusOptions(orderType) {
   return ORDER_STATUS_STAGES[normalizeOrderType(orderType)] || ORDER_STATUS_STAGES.공사;
 }
@@ -474,9 +491,82 @@ function orderManagementNumberFor(order) {
   return assignManagementNumber(order, orderState.orders);
 }
 
+function orderTagsFromDescription(description = "") {
+  const stopwords = new Set(["및", "관련", "요청", "작업", "건"]);
+  const tags = [];
+  const seen = new Set();
+  String(description || "")
+    .split(/[\s,./|·()\[\]{}]+/)
+    .map((word) => word.replace(/^#+/, "").replace(/[^0-9A-Za-z가-힣_-]/g, "").trim())
+    .filter(Boolean)
+    .forEach((word) => {
+      const normalized = word.toLowerCase();
+      if (stopwords.has(word) || seen.has(normalized)) {
+        return;
+      }
+      seen.add(normalized);
+      tags.push(`#${word}`);
+    });
+  return tags.slice(0, 12).join(" ");
+}
+
+function normalizeOrderEquipmentItems(order = {}) {
+  let source = order.equipmentItems || order.equipment_items || order.equipmentItemsJson || [];
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      source = [];
+    }
+  }
+  const items = Array.isArray(source) ? source : [];
+  const normalized = [];
+  const seen = new Set();
+  for (const item of items) {
+    const equipmentId = String(item?.equipmentId || item?.equipment_id || "").trim();
+    const equipmentName = String(item?.equipmentName || item?.equipment_name || item?.name || "").trim();
+    if (!equipmentId && !equipmentName) {
+      continue;
+    }
+    const key = equipmentId || equipmentName.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push({
+      equipmentId,
+      equipmentName,
+      role: String(item?.role || "").trim(),
+      note: String(item?.note || "").trim(),
+    });
+  }
+  const fallbackId = String(order.equipmentId || order.equipment_id || "").trim();
+  const fallbackName = String(order.equipment || order.equipment_name || "").trim();
+  if (!normalized.length && (fallbackId || fallbackName)) {
+    normalized.push({ equipmentId: fallbackId, equipmentName: fallbackName, role: "대표", note: "" });
+  }
+  return normalized;
+}
+
+function representativeOrderEquipment(order = {}) {
+  return normalizeOrderEquipmentItems(order)[0] || { equipmentId: "", equipmentName: "" };
+}
+
+function orderEquipmentItemsInputValue(order = {}) {
+  return JSON.stringify(normalizeOrderEquipmentItems(order));
+}
+
 function orderFromForm(form) {
   const data = Object.fromEntries(new FormData(form).entries());
   const orderType = normalizeOrderType(data.request_type || data.business_type || "공사");
+  const orderSubtype = normalizeOrderSubtype(orderType, data.order_subtype || "");
+  const description = data.description || "";
+  const equipmentItems = normalizeOrderEquipmentItems({
+    equipmentItems: data.equipment_items || "[]",
+    equipmentId: data.equipment_id || "",
+    equipment: data.equipment || "",
+  });
+  const representativeEquipment = equipmentItems[0] || { equipmentId: "", equipmentName: "" };
   const order = {
     id: data.order_id || "",
     requestDate: data.request_date || orderTodayDate(),
@@ -487,13 +577,15 @@ function orderFromForm(form) {
     buyerType: data.buyer_type || "국내",
     vessel: data.vessel || "",
     assetId: data.asset_id || "",
-    equipment: data.equipment || "",
-    equipmentId: data.equipment_id || "",
+    equipment: representativeEquipment.equipmentName || data.equipment || "",
+    equipmentId: representativeEquipment.equipmentId || data.equipment_id || "",
+    equipmentItems,
     requestChannel: data.request_channel || "이메일",
     requestType: orderType,
+    orderSubtype,
     urgent: Boolean(data.urgent),
-    description: data.description || "",
-    orderSummary: data.order_summary || "",
+    description,
+    orderSummary: orderTagsFromDescription(description),
     notes: data.notes || "",
     partsQuote: Boolean(data.parts_quote),
     repairQuote: Boolean(data.repair_quote),
@@ -868,6 +960,27 @@ function orderEquipmentOrderName(equipment) {
   return parts.filter((part, index) => parts.findIndex((item) => item.toLowerCase() === part.toLowerCase()) === index).join(" ");
 }
 
+function renderOrderEquipmentItems(items = []) {
+  if (!items.length) {
+    return '<div class="order-empty-cell">선택된 엔진이 없습니다.</div>';
+  }
+  return `
+    <div class="order-document-list">
+      ${items
+        .map(
+          (item, index) => `
+            <button type="button" class="order-document-row" data-order-equipment-remove="${index}" title="클릭해서 엔진 제거">
+              <span>${index === 0 ? "대표" : `추가 ${index}`}</span>
+              <span>${escapeTextarea(item.equipmentName || item.equipmentId || "-")}</span>
+              <span>삭제</span>
+            </button>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function orderEquipmentByName(vesselName = "", equipmentName = "") {
   const name = String(equipmentName || "");
   return (
@@ -1235,6 +1348,7 @@ function renderOrderDetailPanel(order) {
     equipment: "",
     requestChannel: "이메일",
     requestType: "공사",
+    orderSubtype: "부품복합",
     urgent: false,
     description: "",
     orderSummary: "",
@@ -1263,8 +1377,13 @@ function renderOrderDetailPanel(order) {
   if (currentEquipment) {
     current.equipment = orderEquipmentDisplayName(currentEquipment);
   }
+  const currentEquipmentItems = normalizeOrderEquipmentItems(current);
+  const representativeEquipment = representativeOrderEquipment({ ...current, equipmentItems: currentEquipmentItems });
+  current.equipment = representativeEquipment.equipmentName || current.equipment || "";
+  current.equipmentId = representativeEquipment.equipmentId || current.equipmentId || "";
   current.requestType = normalizeOrderType(current.requestType || current.businessType);
   current.businessType = normalizeOrderType(current.businessType || current.requestType);
+  current.orderSubtype = normalizeOrderSubtype(current.requestType, current.orderSubtype || current.order_subtype);
   current.status = orderStatusFor(current);
   const createdByName = current.createdByName || (current.id ? current.createdBy || "" : orderCurrentUserName());
   const updatedByName = current.updatedByName || current.updatedBy || "-";
@@ -1275,6 +1394,7 @@ function renderOrderDetailPanel(order) {
     current.confirmed && current.requestType === "공사" && !current.confirmationDate
       ? '<div class="order-inline-warning">예정일 미등록. 마지막 등록자에게 공사 날짜 등록 알림 유지.</div>'
       : "";
+  const tagValue = orderTagsFromDescription(current.description);
 
   return `
     <form id="order-form" class="order-detail-form">
@@ -1282,6 +1402,7 @@ function renderOrderDetailPanel(order) {
       <input type="hidden" name="customer_id" value="${escapeAttribute(current.customerId || orderState.customerLookup.selectedCustomerId || "")}" />
       <input type="hidden" name="asset_id" value="${escapeAttribute(current.assetId || currentAsset?.id || "")}" />
       <input type="hidden" name="equipment_id" value="${escapeAttribute(current.equipmentId || currentEquipment?.id || "")}" />
+      <input type="hidden" name="equipment_items" value="${escapeAttribute(orderEquipmentItemsInputValue({ ...current, equipmentItems: currentEquipmentItems }))}" />
       <div class="order-form-columns">
         <section class="order-form-main">
           <div class="order-compact-grid">
@@ -1289,10 +1410,12 @@ function renderOrderDetailPanel(order) {
             <label>선사 <span class="order-combo-wrap"><input class="text-field" name="ship_owner" list="order-ship-owner-options" data-order-combo-input value="${escapeAttribute(current.shipOwner || current.customer)}" /><button type="button" class="order-combo-button" data-order-combo-open="ship_owner" aria-label="선사 목록 열기">▾</button></span></label>
             <label class="order-lookup-field">선박 <span class="order-combo-wrap"><input class="text-field" name="vessel" data-order-vessel-input data-order-combo-input value="${escapeAttribute(current.vessel)}" autocomplete="off" /><button type="button" class="order-combo-button" data-order-combo-open="vessel" aria-label="선박 목록 열기">▾</button>${renderOrderVesselDropdown(current.vessel)}</span></label>
             <label class="order-lookup-field">엔진 <span class="order-combo-wrap"><input class="text-field" name="equipment" data-order-equipment-input data-order-combo-input value="${escapeAttribute(current.equipment)}" autocomplete="off" /><button type="button" class="order-combo-button" data-order-combo-open="equipment" aria-label="엔진 목록 열기">▾</button>${renderOrderEquipmentDropdown(current.vessel, current.equipment)}</span></label>
+            <div class="order-wide-field">${renderOrderEquipmentItems(currentEquipmentItems)}</div>
             <label>주문구분 <select class="text-field" name="request_type" data-order-type-select>${orderSelectOptions(ORDER_TYPES, current.requestType)}</select></label>
+            <label>세부구분 <select class="text-field" name="order_subtype" data-order-subtype-select>${orderSelectOptions(orderSubtypeOptions(current.requestType), current.orderSubtype)}</select></label>
             <label>주문명 <input class="text-field" name="description" value="${escapeAttribute(current.description)}" /></label>
             <label>주문상태 <select class="text-field" name="order_status">${orderSelectOptions(orderStatusOptions(current.requestType), current.status)}</select></label>
-            <label>설명 <input class="text-field" name="order_summary" value="${escapeAttribute(current.orderSummary || "")}" /></label>
+            <label>태그 <input class="text-field" name="order_summary" data-order-tags-input value="${escapeAttribute(tagValue)}" readonly /></label>
             <label>주문담당자 <input class="text-field" name="manager" list="order-manager-options" value="${escapeAttribute(current.manager)}" /></label>
             <label>발주처 구분 <select class="text-field" name="buyer_type">${orderSelectOptions(["국내", "해외"], current.buyerType || "국내")}</select></label>
             <label class="order-check-field">수주 <input type="checkbox" name="confirmed"${current.confirmed ? " checked" : ""} /></label>

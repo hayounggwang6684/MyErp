@@ -106,6 +106,12 @@ async function handleOrderClick(event) {
     return true;
   }
 
+  const equipmentRemove = event.target.closest("[data-order-equipment-remove]");
+  if (equipmentRemove) {
+    removeOrderEquipment(Number(equipmentRemove.dataset.orderEquipmentRemove));
+    return true;
+  }
+
   const orderSelectRow = event.target.closest("[data-order-select]");
   if (orderSelectRow) {
     if (!(await confirmCustomerInlineEditBeforeLeave())) {
@@ -520,19 +526,61 @@ function selectOrderEquipment(equipmentId) {
     return;
   }
   const displayName = orderEquipmentDisplayName(equipment);
+  const existingItems = normalizeOrderEquipmentItems(orderState.draft);
+  const exists = existingItems.some((item) => (equipment.id && item.equipmentId === equipment.id) || item.equipmentName === displayName);
+  if (exists) {
+    orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
+    orderState.notice = "이미 선택된 엔진입니다.";
+    renderOrderWorkspace();
+    focusOrderInput("[data-order-equipment-input]");
+    return;
+  }
+  const equipmentItems = [
+    ...existingItems,
+    {
+      equipmentId: equipment.id || "",
+      equipmentName: displayName,
+      role: existingItems.length ? "" : "대표",
+      note: "",
+    },
+  ];
+  const representativeEquipment = representativeOrderEquipment({ equipmentItems });
   const draft = {
     ...orderState.draft,
-    equipment: displayName,
-    equipmentId: equipment.id || "",
+    equipment: representativeEquipment.equipmentName || displayName,
+    equipmentId: representativeEquipment.equipmentId || equipment.id || "",
+    equipmentItems,
   };
   if (!String(draft.description || "").trim()) {
     draft.description = orderEquipmentOrderName(equipment);
+    draft.orderSummary = orderTagsFromDescription(draft.description);
   }
   orderState.draft = draft;
   orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
   orderState.notice = "엔진/장비 선택 완료.";
   renderOrderWorkspace();
   focusOrderInput("[data-order-type-select]");
+}
+
+function removeOrderEquipment(index) {
+  if (!Number.isInteger(index) || index < 0) {
+    return;
+  }
+  readOrderFormDraft();
+  const equipmentItems = normalizeOrderEquipmentItems(orderState.draft).filter((_, itemIndex) => itemIndex !== index);
+  if (equipmentItems[0]) {
+    equipmentItems[0] = { ...equipmentItems[0], role: equipmentItems[0].role || "대표" };
+  }
+  const representativeEquipment = representativeOrderEquipment({ equipmentItems });
+  orderState.draft = {
+    ...orderState.draft,
+    equipment: representativeEquipment.equipmentName || "",
+    equipmentId: representativeEquipment.equipmentId || "",
+    equipmentItems,
+  };
+  orderState.notice = "엔진 선택을 제거했습니다.";
+  renderOrderWorkspace();
+  focusOrderInput("[data-order-equipment-input]");
 }
 
 function parseOrderDateInput(value) {
@@ -810,6 +858,12 @@ function handleOrderInput(event) {
     if (equipmentIdInput instanceof HTMLInputElement) {
       equipmentIdInput.value = "";
     }
+    orderState.draft = {
+      ...orderState.draft,
+      equipment: "",
+      equipmentId: "",
+      equipmentItems: [],
+    };
     orderState.vesselLookup.query = vesselInput.value || "";
     orderState.vesselLookup.awaitingSelection = true;
     orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
@@ -830,6 +884,13 @@ function handleOrderInput(event) {
 
   const form = event.target.closest("#order-form");
   if (form instanceof HTMLFormElement) {
+    const descriptionInput = event.target.closest('[name="description"]');
+    if (descriptionInput instanceof HTMLInputElement) {
+      const tagsInput = form.querySelector("[data-order-tags-input]");
+      if (tagsInput instanceof HTMLInputElement) {
+        tagsInput.value = orderTagsFromDescription(descriptionInput.value || "");
+      }
+    }
     updateOrderPreviewFromForm(form);
     return true;
   }
@@ -863,6 +924,15 @@ function handleOrderChange(event) {
   if (event.target.closest("[data-order-type-select]")) {
     readOrderFormDraft();
     orderState.draft.status = "견적";
+    orderState.draft.orderSubtype = defaultOrderSubtype(orderState.draft.requestType || orderState.draft.businessType);
+    renderOrderWorkspace();
+    focusOrderInput("[data-order-subtype-select]");
+    return true;
+  }
+
+  if (event.target.closest("[data-order-subtype-select]")) {
+    readOrderFormDraft();
+    orderState.draft.orderSubtype = normalizeOrderSubtype(orderState.draft.requestType || orderState.draft.businessType, orderState.draft.orderSubtype);
     renderOrderWorkspace();
     focusOrderInput("[name='description']");
     return true;

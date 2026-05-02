@@ -12,6 +12,48 @@ function text(value: unknown, fallback = "") {
   return String(value ?? fallback).trim();
 }
 
+function normalizeOrderEquipmentItems(input: OrderRecord) {
+  let source = input.equipmentItems || input.equipment_items || input.equipment_items_json || [];
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      source = [];
+    }
+  }
+  const items = Array.isArray(source) ? source : [];
+  const normalized: Array<{ equipmentId: string; equipmentName: string; role: string; note: string }> = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    const equipmentId = text(record.equipmentId || record.equipment_id);
+    const equipmentName = text(record.equipmentName || record.equipment_name || record.name);
+    if (!equipmentId && !equipmentName) {
+      continue;
+    }
+    const key = equipmentId || equipmentName.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push({
+      equipmentId,
+      equipmentName,
+      role: text(record.role),
+      note: text(record.note),
+    });
+  }
+  const fallbackId = text(input.equipmentId || input.equipment_id);
+  const fallbackName = text(input.equipment || input.equipment_name);
+  if (!normalized.length && (fallbackId || fallbackName)) {
+    normalized.push({ equipmentId: fallbackId, equipmentName: fallbackName, role: "대표", note: "" });
+  }
+  if (normalized[0] && !normalized[0].role) {
+    normalized[0].role = "대표";
+  }
+  return normalized;
+}
+
 function sanitizeStorageSegment(value: unknown, fallback = "file") {
   const normalized = text(value, fallback)
     .replace(/[\\/:*?"<>|]/g, "_")
@@ -64,6 +106,19 @@ function isoDate(value: unknown) {
 function normalizeOrderType(value: unknown) {
   const normalized = text(value, "공사");
   return normalized === "판매" || normalized === "일반 판매" || normalized === "납품 요청" ? "판매" : "공사";
+}
+
+function orderSubtypeOptions(orderType: unknown) {
+  return normalizeOrderType(orderType) === "판매" ? ["부품판매", "엔진판매"] : ["부품복합", "수리단독"];
+}
+
+function defaultOrderSubtype(orderType: unknown) {
+  return normalizeOrderType(orderType) === "판매" ? "부품판매" : "부품복합";
+}
+
+function normalizeOrderSubtype(orderType: unknown, value: unknown) {
+  const normalized = text(value);
+  return orderSubtypeOptions(orderType).includes(normalized) ? normalized : defaultOrderSubtype(orderType);
 }
 
 function orderIdFrom(value: unknown) {
@@ -240,6 +295,7 @@ function buildOrderAuditHistory({ previousOrder, nextOrder, actorUserId, actorNa
     { field: "confirmationDate", label: "예정/확정일" },
     { field: "description", label: "주문명" },
     { field: "businessType", label: "주문구분" },
+    { field: "orderSubtype", label: "세부구분" },
     { field: "customer", label: "매출처" },
     { field: "vessel", label: "선박" },
     { field: "equipment", label: "엔진" },
@@ -284,8 +340,11 @@ function mapOrder(row: Record<string, unknown>): OrderRecord {
     vessel: row.vessel_name || "",
     equipmentId: row.equipment_id || "",
     equipment: row.equipment_name || "",
+    equipmentItems: Array.isArray(row.equipment_items_json) ? row.equipment_items_json : normalizeOrderEquipmentItems({ equipmentId: row.equipment_id, equipment: row.equipment_name }),
     requestChannel: row.request_channel || "이메일",
     requestType: row.request_type || "공사",
+    orderSubtype: row.order_subtype || defaultOrderSubtype(row.request_type || row.business_type),
+    order_subtype: row.order_subtype || defaultOrderSubtype(row.request_type || row.business_type),
     urgent: row.urgent,
     description: row.description || "",
     orderSummary: row.order_summary || row.description || "",
@@ -361,6 +420,8 @@ export class OrderService {
     if (!orderSchemaColumnsPromise) {
       orderSchemaColumnsPromise = (async () => {
         await query(`alter table sales.orders add column if not exists order_summary text null`);
+        await query(`alter table sales.orders add column if not exists equipment_items_json jsonb not null default '[]'::jsonb`);
+        await query(`alter table sales.orders add column if not exists order_subtype text not null default '부품복합'`);
         await query(`alter table sales.orders add column if not exists notes text null`);
         await query(`alter table sales.orders add column if not exists deleted_at timestamptz null`);
         await query(`alter table sales.orders add column if not exists deleted_by text null`);
@@ -637,21 +698,28 @@ export class OrderService {
   private async upsertOrder(input: OrderRecord, actorUserId: string, client: DbExecutor) {
     const orderId = orderIdFrom(input.id);
     const requestType = normalizeOrderType(input.requestType || input.request_type || input.businessType || input.business_type);
+    const orderSubtype = normalizeOrderSubtype(requestType, input.orderSubtype || input.order_subtype || input.subtype);
     const existingRows = (await client.query(`select * from sales.orders order by request_date desc, updated_at desc`)).rows.map(mapOrder);
     const previousOrder = existingRows.find((order) => text(order.id) === orderId) || null;
     const actorResult = await client.query(`select coalesce(nullif(name, ''), username, id) as name from identity.users where id = $1`, [actorUserId]);
     const actorName = text(actorResult.rows[0]?.name, actorUserId);
-    const candidateOrder = {
+    const candidateOrder: OrderRecord = {
       ...input,
       id: orderId,
       requestType,
       businessType: requestType,
+      orderSubtype,
       confirmed: bool(input.confirmed),
       confirmationDate: dateText(input.confirmationDate || input.confirmation_date) || "",
       requestDate: dateText(input.requestDate || input.request_date) || new Date().toISOString().slice(0, 10),
       managementNumber: text(input.managementNumber || input.management_number, "확정 후 발급"),
       mergedInto: "",
     };
+    const equipmentItems = normalizeOrderEquipmentItems(candidateOrder);
+    const representativeEquipment = equipmentItems[0] || { equipmentId: "", equipmentName: "" };
+    candidateOrder.equipmentItems = equipmentItems;
+    candidateOrder.equipmentId = representativeEquipment.equipmentId || text(candidateOrder.equipmentId || candidateOrder.equipment_id);
+    candidateOrder.equipment = representativeEquipment.equipmentName || text(candidateOrder.equipment || candidateOrder.equipment_name);
     const assignedManagementNumber = assignManagementNumber(candidateOrder, existingRows);
     candidateOrder.managementNumber = assignedManagementNumber;
     const mergeHistory = buildOrderAuditHistory({
@@ -663,15 +731,15 @@ export class OrderService {
     const result = await client.query(
       `insert into sales.orders (
          id, request_date, customer_id, customer_name, ship_owner, manager, buyer_type, asset_id, vessel_name,
-         equipment_id, equipment_name, request_channel, request_type, urgent, description, order_summary, notes, parts_quote,
+         equipment_id, equipment_name, equipment_items_json, request_channel, request_type, urgent, description, order_summary, notes, parts_quote,
          repair_quote, no_estimate, confirmed, confirmation_date, confirmation_basis, business_type,
-         status, management_number, documents_json, merge_history_json, merged_order_records_json, created_by, updated_by
+         order_subtype, status, management_number, documents_json, merge_history_json, merged_order_records_json, created_by, updated_by
        )
        values (
          $1, coalesce($2::date, current_date), nullif($3, ''), $4, $5, $6, $7, nullif($8, ''), $9,
-         nullif($10, ''), $11, $12, $13, $14, $15, $16, $17,
-         $18, $19, $20, $21, $22::date, $23,
-         $24, $25, $26, $27::jsonb, $28::jsonb, $29::jsonb, $30, $30
+         nullif($10, ''), $11, $12::jsonb, $13, $14, $15, $16, $17, $18,
+         $19, $20, $21, $22, $23::date, $24,
+         $25, nullif($26, ''), $27, $28, $29::jsonb, $30::jsonb, $31::jsonb, $32, $32
        )
        on conflict (id) do update set
          request_date = excluded.request_date,
@@ -684,6 +752,7 @@ export class OrderService {
          vessel_name = excluded.vessel_name,
          equipment_id = excluded.equipment_id,
          equipment_name = excluded.equipment_name,
+         equipment_items_json = excluded.equipment_items_json,
          request_channel = excluded.request_channel,
          request_type = excluded.request_type,
          urgent = excluded.urgent,
@@ -697,6 +766,7 @@ export class OrderService {
          confirmation_date = excluded.confirmation_date,
          confirmation_basis = excluded.confirmation_basis,
          business_type = excluded.business_type,
+         order_subtype = excluded.order_subtype,
          status = excluded.status,
          management_number = excluded.management_number,
          documents_json = excluded.documents_json,
@@ -715,8 +785,9 @@ export class OrderService {
         text(input.buyerType || input.buyer_type, "국내"),
         text(input.assetId || input.asset_id),
         text(input.vessel || input.vessel_name),
-        text(input.equipmentId || input.equipment_id),
-        text(input.equipment || input.equipment_name),
+        text(candidateOrder.equipmentId || candidateOrder.equipment_id),
+        text(candidateOrder.equipment || candidateOrder.equipment_name),
+        JSON.stringify(equipmentItems),
         text(input.requestChannel || input.request_channel, "이메일"),
         requestType,
         bool(input.urgent),
@@ -730,6 +801,7 @@ export class OrderService {
         dateText(input.confirmationDate || input.confirmation_date),
         text(input.confirmationBasis || input.confirmation_basis, "발주서"),
         requestType,
+        orderSubtype,
         text(input.status, "견적"),
         assignedManagementNumber,
         JSON.stringify(input.documents || []),

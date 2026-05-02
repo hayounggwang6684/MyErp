@@ -499,9 +499,13 @@ function blankQuotationTemplate() {
       logoText: "SUNJIN",
       logoImageUrl: "",
       logoPosition: "left",
+      logoWidth: 150,
+      logoHeight: 46,
       extraLogoText: "STX · PULLMASTER",
       extraLogoImageUrl: "",
       extraLogoPosition: "right",
+      extraLogoWidth: 150,
+      extraLogoHeight: 46,
       tagline: "고객의 마음으로 일하는 욕·해상용 엔진/부속 공급, 수리전문점",
       supplierName: "(주)선진종합",
       supplierRegistrationNo: "601-81-31019",
@@ -530,9 +534,13 @@ function invoiceQuotationTemplatePreset() {
       logoText: "SUNJIN",
       logoImageUrl: "",
       logoPosition: "left",
+      logoWidth: 150,
+      logoHeight: 46,
       extraLogoText: "STX · PULLMASTER",
       extraLogoImageUrl: "",
       extraLogoPosition: "right",
+      extraLogoWidth: 150,
+      extraLogoHeight: 46,
       tagline: "고객의 마음으로 일하는 욕·해상용 엔진/부속 공급, 수리전문점",
       supplierName: "(주)선진종합",
       supplierRegistrationNo: "601-81-31019",
@@ -723,20 +731,24 @@ function readQuotationTemplateDraftFromForm(form, { requireName = false } = {}) 
     },
     document: {
       title: String(data.document_title || currentDraft.document.title || "청구서"),
-      logoText: String(data.logo_text || "SUNJIN"),
-      logoImageUrl: String(data.logo_image_url || ""),
-      logoPosition: String(data.logo_position || "left"),
-      extraLogoText: String(data.extra_logo_text || ""),
-      extraLogoImageUrl: String(data.extra_logo_image_url || ""),
-      extraLogoPosition: String(data.extra_logo_position || "right"),
-      tagline: String(data.tagline || ""),
-      supplierName: String(data.supplier_name || ""),
-      supplierRegistrationNo: String(data.supplier_registration_no || ""),
-      supplierRepresentative: String(data.supplier_representative || ""),
-      supplierAddress: String(data.supplier_address || ""),
-      supplierBusinessType: String(data.supplier_business_type || ""),
-      showSupplierBox: Boolean(form.querySelector('[name="show_supplier_box"]')?.checked),
-      showKoreanAmount: Boolean(form.querySelector('[name="show_korean_amount"]')?.checked),
+      logoText: String(data.logo_text || currentDraft.document.logoText || "SUNJIN"),
+      logoImageUrl: String(data.logo_image_url || currentDraft.document.logoImageUrl || ""),
+      logoPosition: String(data.logo_position || currentDraft.document.logoPosition || "left"),
+      logoWidth: Number(data.logo_width || currentDraft.document.logoWidth || 150),
+      logoHeight: Number(data.logo_height || currentDraft.document.logoHeight || 46),
+      extraLogoText: String(data.extra_logo_text || currentDraft.document.extraLogoText || ""),
+      extraLogoImageUrl: String(data.extra_logo_image_url || currentDraft.document.extraLogoImageUrl || ""),
+      extraLogoPosition: String(data.extra_logo_position || currentDraft.document.extraLogoPosition || "right"),
+      extraLogoWidth: Number(data.extra_logo_width || currentDraft.document.extraLogoWidth || 150),
+      extraLogoHeight: Number(data.extra_logo_height || currentDraft.document.extraLogoHeight || 46),
+      tagline: String(data.tagline || currentDraft.document.tagline || ""),
+      supplierName: String(data.supplier_name || currentDraft.document.supplierName || ""),
+      supplierRegistrationNo: String(data.supplier_registration_no || currentDraft.document.supplierRegistrationNo || ""),
+      supplierRepresentative: String(data.supplier_representative || currentDraft.document.supplierRepresentative || ""),
+      supplierAddress: String(data.supplier_address || currentDraft.document.supplierAddress || ""),
+      supplierBusinessType: String(data.supplier_business_type || currentDraft.document.supplierBusinessType || ""),
+      showSupplierBox: form.querySelector('[name="show_supplier_box"]') ? Boolean(form.querySelector('[name="show_supplier_box"]')?.checked) : Boolean(currentDraft.document.showSupplierBox),
+      showKoreanAmount: form.querySelector('[name="show_korean_amount"]') ? Boolean(form.querySelector('[name="show_korean_amount"]')?.checked) : Boolean(currentDraft.document.showKoreanAmount),
     },
     infoFields,
     table: {
@@ -823,6 +835,10 @@ function closeProjectTemplateContextMenu() {
 
 function openProjectTemplateContextMenu(x, y, target) {
   projectState.templateModal.contextMenu = { visible: true, x: Math.max(8, x), y: Math.max(8, y), target: String(target || "") };
+}
+
+function templateLogoFieldName(kind = "primary", suffix = "ImageUrl") {
+  return kind === "extra" ? `extraLogo${suffix}` : `logo${suffix}`;
 }
 
 function openProjectQuotationPreview(html) {
@@ -1039,14 +1055,17 @@ function quotationAmountText(value, currency = "KRW") {
 function renderTemplateLogoMark(document = {}, kind = "primary") {
   const imageUrl = kind === "extra" ? document.extraLogoImageUrl : document.logoImageUrl;
   const text = kind === "extra" ? document.extraLogoText : document.logoText;
+  const width = Number(kind === "extra" ? document.extraLogoWidth : document.logoWidth) || 150;
+  const height = Number(kind === "extra" ? document.extraLogoHeight : document.logoHeight) || 46;
   const fieldName = kind === "extra" ? "extraLogoText" : "logoText";
   const className = kind === "extra" ? "project-template-extra-logo" : "project-template-brand-block";
+  const logoAttrs = `data-project-template-logo="${kind}" data-project-template-context-target="logo-${kind}"`;
   if (imageUrl) {
-    return `<div class="${className} image-logo"><img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(text || "logo")}" /><span contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "")}</span></div>`;
+    return `<div class="${className} image-logo" ${logoAttrs}><img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(text || "logo")}" style="width:${escapeAttribute(String(width))}px; height:${escapeAttribute(String(height))}px;" /><span contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "")}</span></div>`;
   }
   return kind === "extra"
-    ? `<div class="${className}" contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "")}</div>`
-    : `<div class="${className}"><strong contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "SUNJIN")}</strong><small>SHERWOOD</small></div>`;
+    ? `<div class="${className}" contenteditable="true" data-project-template-inline-field="${fieldName}" ${logoAttrs}>${escapeTextarea(text || "")}</div>`
+    : `<div class="${className}" ${logoAttrs}><strong contenteditable="true" data-project-template-inline-field="${fieldName}">${escapeTextarea(text || "SUNJIN")}</strong><small>SHERWOOD</small></div>`;
 }
 
 function quotationPrintHtml(quotation) {
@@ -1819,7 +1838,7 @@ function renderProjectTemplateCanvasPreview(template) {
     ">
       <div class="project-template-page">
         <div class="project-template-page-inner">
-          <div class="project-template-document-head logo-primary-${escapeAttribute(document.logoPosition || "left")} logo-extra-${escapeAttribute(document.extraLogoPosition || "right")}" data-project-template-context-target="header">
+          <div class="project-template-document-head logo-primary-${escapeAttribute(document.logoPosition || "left")} logo-extra-${escapeAttribute(document.extraLogoPosition || "right")}" data-project-template-context-target="header" data-project-template-logo-empty>
             ${renderTemplateLogoMark(document, "primary")}
             <h2 contenteditable="true" data-project-template-inline-field="documentTitle">${escapeTextarea(document.title || "청구서")}</h2>
             ${renderTemplateLogoMark(document, "extra")}
@@ -1877,9 +1896,22 @@ function renderProjectTemplateContextMenu() {
   if (!contextMenu.visible) {
     return "";
   }
+  const isLogoMenu = contextMenu.target === "logo-primary" || contextMenu.target === "logo-extra";
+  if (isLogoMenu) {
+    const kind = contextMenu.target.replace("logo-", "");
+    return `
+      <div class="project-context-menu" style="left:${contextMenu.x}px; top:${contextMenu.y}px;">
+        <button type="button" class="project-context-menu-button" data-project-template-context-action="logo-change" data-project-template-logo-kind="${kind}">변경</button>
+        <button type="button" class="project-context-menu-button" data-project-template-context-action="logo-resize" data-project-template-logo-kind="${kind}">크기 조절</button>
+        <button type="button" class="project-context-menu-button" data-project-template-context-action="logo-move-left" data-project-template-logo-kind="${kind}">좌측 배치</button>
+        <button type="button" class="project-context-menu-button" data-project-template-context-action="logo-move-center" data-project-template-logo-kind="${kind}">중앙 배치</button>
+        <button type="button" class="project-context-menu-button" data-project-template-context-action="logo-move-right" data-project-template-logo-kind="${kind}">우측 배치</button>
+        <button type="button" class="project-context-menu-button danger" data-project-template-context-action="logo-delete" data-project-template-logo-kind="${kind}">삭제</button>
+      </div>
+    `;
+  }
   const headerActions = `
-    <button type="button" class="project-context-menu-button" data-project-template-context-action="header-add-extra-logo">추가 로고 넣기</button>
-    <button type="button" class="project-context-menu-button" data-project-template-context-action="header-remove-extra-logo">추가 로고 삭제</button>
+    <button type="button" class="project-context-menu-button" data-project-template-context-action="logo-add">새 로고</button>
     <button type="button" class="project-context-menu-button" data-project-template-context-action="header-toggle-tagline">상단 문구 추가/삭제</button>
     <button type="button" class="project-context-menu-button" data-project-template-context-action="header-reset">상단 기본값</button>
   `;
@@ -1936,15 +1968,12 @@ function renderProjectTemplateModal() {
                   <span>세로</span>
                 </label>
               </div>
-            </section>
-            <section class="project-template-sidebar-section">
-              <div class="project-template-sidebar-header">
-                <strong>매핑 필드</strong>
-                <span>출력 정보</span>
-              </div>
-              <div class="project-template-field-palette">
-                ${renderProjectTemplateFieldPalette(draft.infoFields)}
-              </div>
+              <details class="project-template-mapping-popover">
+                <summary>매핑 필드</summary>
+                <div class="project-template-field-palette">
+                  ${renderProjectTemplateFieldPalette(draft.infoFields)}
+                </div>
+              </details>
             </section>
           </aside>
           <section class="project-template-preview-pane">
@@ -1960,50 +1989,6 @@ function renderProjectTemplateModal() {
           </section>
           <form id="project-template-form" class="project-template-form project-template-editor">
             <input type="hidden" name="template_id" value="${escapeAttribute(draft.id || "")}" />
-            <section class="project-template-section">
-              <h4>상단 양식</h4>
-              <p>로고 텍스트와 문서 상단 안내 문구를 설정합니다.</p>
-              <div class="project-template-grid two">
-                <label>로고 텍스트 <input class="text-field" name="logo_text" value="${escapeAttribute(draft.document.logoText || "")}" /></label>
-                <label>로고 이미지 URL/경로 <input class="text-field" name="logo_image_url" value="${escapeAttribute(draft.document.logoImageUrl || "")}" placeholder="https://... 또는 file 경로" /></label>
-                <label>로고 위치
-                  <select class="text-field" name="logo_position">
-                    <option value="left"${draft.document.logoPosition === "left" ? " selected" : ""}>좌측</option>
-                    <option value="center"${draft.document.logoPosition === "center" ? " selected" : ""}>중앙</option>
-                    <option value="right"${draft.document.logoPosition === "right" ? " selected" : ""}>우측</option>
-                  </select>
-                </label>
-                <label>추가 로고 텍스트 <input class="text-field" name="extra_logo_text" value="${escapeAttribute(draft.document.extraLogoText || "")}" /></label>
-                <label>추가 로고 이미지 URL/경로 <input class="text-field" name="extra_logo_image_url" value="${escapeAttribute(draft.document.extraLogoImageUrl || "")}" /></label>
-                <label>추가 로고 위치
-                  <select class="text-field" name="extra_logo_position">
-                    <option value="left"${draft.document.extraLogoPosition === "left" ? " selected" : ""}>좌측</option>
-                    <option value="center"${draft.document.extraLogoPosition === "center" ? " selected" : ""}>중앙</option>
-                    <option value="right"${draft.document.extraLogoPosition === "right" ? " selected" : ""}>우측</option>
-                  </select>
-                </label>
-                <label>상단 문구 <input class="text-field" name="tagline" value="${escapeAttribute(draft.document.tagline || "")}" /></label>
-              </div>
-            </section>
-            <section class="project-template-section">
-              <h4>공급자 박스</h4>
-              <p>기존 청구서 오른쪽 공급자 정보표에 들어갈 내용을 관리합니다.</p>
-              <div class="project-template-grid two">
-                <label>공급자 상호 <input class="text-field" name="supplier_name" value="${escapeAttribute(draft.document.supplierName || "")}" /></label>
-                <label>등록번호 <input class="text-field" name="supplier_registration_no" value="${escapeAttribute(draft.document.supplierRegistrationNo || "")}" /></label>
-                <label>대표자 <input class="text-field" name="supplier_representative" value="${escapeAttribute(draft.document.supplierRepresentative || "")}" /></label>
-                <label>업태/종목 <input class="text-field" name="supplier_business_type" value="${escapeAttribute(draft.document.supplierBusinessType || "")}" /></label>
-                <label class="project-wide-field">주소 <input class="text-field" name="supplier_address" value="${escapeAttribute(draft.document.supplierAddress || "")}" /></label>
-              </div>
-              <label class="project-template-inline-toggle">
-                <input type="checkbox" name="show_supplier_box"${draft.document.showSupplierBox ? " checked" : ""} />
-                <span>공급자 박스 표시</span>
-              </label>
-              <label class="project-template-inline-toggle">
-                <input type="checkbox" name="show_korean_amount"${draft.document.showKoreanAmount ? " checked" : ""} />
-                <span>합계금액 한글 영역 표시</span>
-              </label>
-            </section>
             <section class="project-template-section">
               <h4>여백</h4>
               <p>A4 출력 시 페이지 안쪽 여백입니다.</p>

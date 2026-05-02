@@ -1,14 +1,59 @@
 async function handleProjectClick(event) {
+  const logoEmptyArea = event.target.closest("[data-project-template-logo-empty]");
+  if (
+    logoEmptyArea &&
+    projectState.templateModal.open &&
+    !event.target.closest("[data-project-template-logo]") &&
+    !event.target.closest("[contenteditable=\"true\"]") &&
+    !event.target.closest(".project-context-menu")
+  ) {
+    const path = await requestAppPrompt("새 로고 파일 경로를 입력하세요.", "", "새 로고");
+    if (path) {
+      const draft = normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
+      const useExtra = Boolean(draft.document.logoImageUrl || draft.document.logoText);
+      const kind = useExtra ? "extra" : "primary";
+      draft.document[templateLogoFieldName(kind, "ImageUrl")] = String(path).trim();
+      draft.document[templateLogoFieldName(kind, "Text")] = draft.document[templateLogoFieldName(kind, "Text")] || "LOGO";
+      draft.document[templateLogoFieldName(kind, "Position")] = kind === "extra" ? "right" : "left";
+      draft.document[templateLogoFieldName(kind, "Width")] = draft.document[templateLogoFieldName(kind, "Width")] || 150;
+      draft.document[templateLogoFieldName(kind, "Height")] = draft.document[templateLogoFieldName(kind, "Height")] || 46;
+      projectState.templateModal.draft = normalizeQuotationTemplate(draft);
+      closeProjectTemplateContextMenu();
+      renderProjectWorkspace();
+    }
+    return true;
+  }
+
   const templateContextActionButton = event.target.closest("[data-project-template-context-action]");
   if (templateContextActionButton) {
     const action = templateContextActionButton.dataset.projectTemplateContextAction || "";
+    const logoKind = templateContextActionButton.dataset.projectTemplateLogoKind || "extra";
     const draft = normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
-    if (action === "header-add-extra-logo") {
-      draft.document.extraLogoText = draft.document.extraLogoText || "STX · PULLMASTER";
-      draft.document.extraLogoPosition = draft.document.extraLogoPosition || "right";
-    } else if (action === "header-remove-extra-logo") {
-      draft.document.extraLogoText = "";
-      draft.document.extraLogoImageUrl = "";
+    if (action === "logo-add" || action === "logo-change") {
+      const kind = action === "logo-change" ? logoKind : draft.document.logoImageUrl ? "extra" : "primary";
+      const currentPath = draft.document[templateLogoFieldName(kind, "ImageUrl")] || "";
+      const path = await requestAppPrompt("로고 파일 경로를 입력하세요.", currentPath, action === "logo-change" ? "로고 변경" : "새 로고");
+      if (path) {
+        draft.document[templateLogoFieldName(kind, "ImageUrl")] = String(path).trim();
+        draft.document[templateLogoFieldName(kind, "Text")] = draft.document[templateLogoFieldName(kind, "Text")] || "LOGO";
+        draft.document[templateLogoFieldName(kind, "Position")] = draft.document[templateLogoFieldName(kind, "Position")] || (kind === "extra" ? "right" : "left");
+        draft.document[templateLogoFieldName(kind, "Width")] = draft.document[templateLogoFieldName(kind, "Width")] || 150;
+        draft.document[templateLogoFieldName(kind, "Height")] = draft.document[templateLogoFieldName(kind, "Height")] || 46;
+      }
+    } else if (action === "logo-delete") {
+      draft.document[templateLogoFieldName(logoKind, "ImageUrl")] = "";
+      draft.document[templateLogoFieldName(logoKind, "Text")] = "";
+    } else if (action === "logo-resize") {
+      const currentWidth = draft.document[templateLogoFieldName(logoKind, "Width")] || 150;
+      const currentHeight = draft.document[templateLogoFieldName(logoKind, "Height")] || 46;
+      const value = await requestAppPrompt("로고 크기를 가로x세로(px) 형식으로 입력하세요.", `${currentWidth}x${currentHeight}`, "로고 크기");
+      const match = String(value || "").match(/(\d+)\s*[xX, ]\s*(\d+)/);
+      if (match) {
+        draft.document[templateLogoFieldName(logoKind, "Width")] = Number(match[1]);
+        draft.document[templateLogoFieldName(logoKind, "Height")] = Number(match[2]);
+      }
+    } else if (action.startsWith("logo-move-")) {
+      draft.document[templateLogoFieldName(logoKind, "Position")] = action.replace("logo-move-", "");
     } else if (action === "header-toggle-tagline") {
       draft.document.tagline = draft.document.tagline ? "" : "고객의 마음으로 일하는 욕·해상용 엔진/부속 공급, 수리전문점";
     } else if (action === "header-reset") {

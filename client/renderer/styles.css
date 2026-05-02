@@ -4978,6 +4978,14 @@ button, input { font: inherit; }
   font-weight: 850;
 }
 
+.project-template-sidebar .text-field {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 30px;
+}
+
 .project-template-orientation-toggle {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5014,6 +5022,44 @@ button, input { font: inherit; }
   background: var(--brand-600);
   color: #fff;
   box-shadow: 0 6px 14px rgba(42, 111, 210, 0.22);
+}
+
+.project-template-mapping-popover {
+  position: relative;
+}
+
+.project-template-mapping-popover summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(42, 111, 210, 0.38);
+  border-radius: 8px;
+  background: rgba(42, 111, 210, 0.08);
+  color: var(--brand-700);
+  font-size: 12px;
+  font-weight: 900;
+  list-style: none;
+  cursor: pointer;
+}
+
+.project-template-mapping-popover summary::-webkit-details-marker {
+  display: none;
+}
+
+.project-template-mapping-popover[open] .project-template-field-palette {
+  position: absolute;
+  z-index: 95;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line-300);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
 }
 
 .project-template-sidebar-section {
@@ -5376,12 +5422,15 @@ button, input { font: inherit; }
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 2px;
+  border-radius: 4px;
+  cursor: context-menu;
 }
 
 .project-template-brand-block img,
 .project-template-extra-logo img {
-  max-width: 150px;
-  max-height: 46px;
+  max-width: none;
+  max-height: none;
   object-fit: contain;
 }
 
@@ -5433,10 +5482,6 @@ button, input { font: inherit; }
   grid-template-columns: minmax(0, 1fr) minmax(220px, 0.9fr);
   border-top: 1px solid #111;
   border-left: 1px solid #111;
-}
-
-.project-template-canvas.portrait .project-template-preview-top {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .project-template-meta-table {
