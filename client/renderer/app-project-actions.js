@@ -7,13 +7,13 @@ async function handleProjectClick(event) {
     !event.target.closest("[contenteditable=\"true\"]") &&
     !event.target.closest(".project-context-menu")
   ) {
-    const path = await requestAppPrompt("새 로고 파일 경로를 입력하세요.", "", "새 로고");
-    if (path) {
+    const selectedLogo = await selectProjectTemplateLogoFile();
+    if (selectedLogo) {
       const draft = normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
       const useExtra = Boolean(draft.document.logoImageUrl || draft.document.logoText);
       const kind = useExtra ? "extra" : "primary";
-      draft.document[templateLogoFieldName(kind, "ImageUrl")] = String(path).trim();
-      draft.document[templateLogoFieldName(kind, "Text")] = draft.document[templateLogoFieldName(kind, "Text")] || "LOGO";
+      draft.document[templateLogoFieldName(kind, "ImageUrl")] = selectedLogo.dataUrl;
+      draft.document[templateLogoFieldName(kind, "Text")] = selectedLogo.name;
       draft.document[templateLogoFieldName(kind, "Position")] = kind === "extra" ? "right" : "left";
       draft.document[templateLogoFieldName(kind, "Width")] = draft.document[templateLogoFieldName(kind, "Width")] || 150;
       draft.document[templateLogoFieldName(kind, "Height")] = draft.document[templateLogoFieldName(kind, "Height")] || 46;
@@ -31,11 +31,10 @@ async function handleProjectClick(event) {
     const draft = normalizeQuotationTemplate(projectState.templateModal.draft || blankQuotationTemplate());
     if (action === "logo-add" || action === "logo-change") {
       const kind = action === "logo-change" ? logoKind : draft.document.logoImageUrl ? "extra" : "primary";
-      const currentPath = draft.document[templateLogoFieldName(kind, "ImageUrl")] || "";
-      const path = await requestAppPrompt("로고 파일 경로를 입력하세요.", currentPath, action === "logo-change" ? "로고 변경" : "새 로고");
-      if (path) {
-        draft.document[templateLogoFieldName(kind, "ImageUrl")] = String(path).trim();
-        draft.document[templateLogoFieldName(kind, "Text")] = draft.document[templateLogoFieldName(kind, "Text")] || "LOGO";
+      const selectedLogo = await selectProjectTemplateLogoFile();
+      if (selectedLogo) {
+        draft.document[templateLogoFieldName(kind, "ImageUrl")] = selectedLogo.dataUrl;
+        draft.document[templateLogoFieldName(kind, "Text")] = selectedLogo.name;
         draft.document[templateLogoFieldName(kind, "Position")] = draft.document[templateLogoFieldName(kind, "Position")] || (kind === "extra" ? "right" : "left");
         draft.document[templateLogoFieldName(kind, "Width")] = draft.document[templateLogoFieldName(kind, "Width")] || 150;
         draft.document[templateLogoFieldName(kind, "Height")] = draft.document[templateLogoFieldName(kind, "Height")] || 46;
@@ -168,11 +167,13 @@ async function handleProjectClick(event) {
     }
     const draft = readQuotationDraftFromForm(form);
     if (!draft.quotationNo.trim()) {
-      await showAppMessage("견적번호를 입력하세요.");
-      return true;
+      draft.quotationNo = quotationNumber(selectedProject());
     }
     const exists = projectState.quotations.some((quotation) => quotation.id === draft.id);
-    saveProjectQuotations(exists ? projectState.quotations.map((quotation) => (quotation.id === draft.id ? draft : quotation)) : [...projectState.quotations, draft]);
+    const savedQuotations = exists ? projectState.quotations.map((quotation) => (quotation.id === draft.id ? draft : quotation)) : [...projectState.quotations, draft];
+    saveProjectQuotations(savedQuotations);
+    projectState.quotationModal.draft = draft;
+    projectState.quotationModal.dirty = false;
     closeProjectQuotationModal();
     renderProjectWorkspace();
     await showAppMessage("견적서를 저장했습니다.");
@@ -310,6 +311,59 @@ async function handleProjectClick(event) {
   return false;
 }
 
+function selectProjectTemplateLogoFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/webp,image/gif,image/svg+xml";
+    input.style.position = "fixed";
+    input.style.left = "-9999px";
+    input.style.top = "0";
+
+    const cleanup = () => {
+      input.remove();
+      window.removeEventListener("focus", handleWindowFocus, true);
+    };
+    const finish = (value) => {
+      cleanup();
+      resolve(value);
+    };
+    const handleWindowFocus = () => {
+      setTimeout(() => {
+        if (!input.files?.length) {
+          finish(null);
+        }
+      }, 300);
+    };
+
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) {
+        finish(null);
+        return;
+      }
+      if (!String(file.type || "").startsWith("image/")) {
+        showAppMessage("이미지 파일을 선택하세요.");
+        finish(null);
+        return;
+      }
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        finish({ dataUrl: String(reader.result || ""), name: file.name.replace(/\.[^.]+$/, "") || "LOGO" });
+      });
+      reader.addEventListener("error", () => {
+        showAppMessage("로고 이미지를 읽지 못했습니다.");
+        finish(null);
+      });
+      reader.readAsDataURL(file);
+    });
+
+    document.body.appendChild(input);
+    window.addEventListener("focus", handleWindowFocus, true);
+    input.click();
+  });
+}
+
 function handleProjectQuotationDescriptionKeydown(event) {
   if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
     return true;
@@ -339,6 +393,44 @@ function handleProjectQuotationDescriptionKeydown(event) {
       nextInput.select();
     }
   }, 0);
+  return false;
+}
+
+function handleProjectQuotationGridKeydown(event) {
+  const navigationKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+  if (!navigationKeys.includes(event.key) || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) {
+    return true;
+  }
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.matches("input, select, textarea")) {
+    return true;
+  }
+  const row = target.closest("[data-quotation-item-row]");
+  const grid = target.closest(".project-quotation-items");
+  if (!row || !grid) {
+    return true;
+  }
+  const rows = Array.from(grid.querySelectorAll("[data-quotation-item-row]"));
+  const rowIndex = rows.indexOf(row);
+  const cells = Array.from(row.querySelectorAll("select.text-field, input.text-field, textarea.text-field")).filter((cell) => !cell.disabled);
+  const columnIndex = cells.indexOf(target);
+  if (rowIndex < 0 || columnIndex < 0) {
+    return true;
+  }
+  const nextRowIndex = event.key === "ArrowUp" ? rowIndex - 1 : event.key === "ArrowDown" ? rowIndex + 1 : rowIndex;
+  const nextColumnIndex = event.key === "ArrowLeft" ? columnIndex - 1 : event.key === "ArrowRight" ? columnIndex + 1 : columnIndex;
+  const nextRow = rows[nextRowIndex];
+  if (!nextRow) {
+    return true;
+  }
+  const nextCells = Array.from(nextRow.querySelectorAll("select.text-field, input.text-field, textarea.text-field")).filter((cell) => !cell.disabled);
+  const nextCell = nextCells[Math.max(0, Math.min(nextColumnIndex, nextCells.length - 1))];
+  if (!nextCell) {
+    return true;
+  }
+  event.preventDefault();
+  nextCell.focus();
+  nextCell.select?.();
   return false;
 }
 
@@ -555,11 +647,15 @@ function handleProjectChange(event) {
   if (templateSelect) {
     const form = document.getElementById("project-quotation-form");
     const template = loadQuotationTemplates().find((item) => item.id === templateSelect.value);
-    if (form instanceof HTMLFormElement && template) {
+    if (form instanceof HTMLFormElement) {
       const draft = readQuotationDraftFromForm(form);
-      draft.templateId = template.id;
-      draft.note = template.defaultText || draft.note;
-      draft.items = structuredClone(template.items?.length ? template.items : [emptyQuotationItem()]);
+      if (template) {
+        draft.templateId = template.id;
+        draft.note = template.defaultText || draft.note;
+        draft.items = structuredClone(template.items?.length ? template.items : draft.items?.length ? draft.items : [emptyQuotationItem()]);
+      } else {
+        draft.templateId = "";
+      }
       projectState.quotationModal.draft = draft;
       projectState.quotationModal.dirty = true;
       renderProjectWorkspace();

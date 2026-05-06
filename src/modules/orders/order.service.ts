@@ -23,7 +23,6 @@ function normalizeOrderEquipmentItems(input: OrderRecord) {
   }
   const items = Array.isArray(source) ? source : [];
   const normalized: Array<{ equipmentId: string; equipmentName: string; role: string; note: string }> = [];
-  const seen = new Set<string>();
   for (const item of items) {
     const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     const equipmentId = text(record.equipmentId || record.equipment_id);
@@ -31,11 +30,6 @@ function normalizeOrderEquipmentItems(input: OrderRecord) {
     if (!equipmentId && !equipmentName) {
       continue;
     }
-    const key = equipmentId || equipmentName.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
     normalized.push({
       equipmentId,
       equipmentName,

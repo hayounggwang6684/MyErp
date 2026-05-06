@@ -64,6 +64,13 @@ async function handleOrderClick(event) {
   const orderComboButton = event.target.closest("[data-order-combo-open]");
   if (orderComboButton) {
     const fieldName = orderComboButton.dataset.orderComboOpen || "";
+    if (fieldName === "equipment") {
+      readOrderFormDraft();
+      orderState.equipmentPicker = { visible: true };
+      orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
+      renderOrderWorkspace();
+      return true;
+    }
     const input = orderComboButton.closest(".order-combo-wrap")?.querySelector("input");
     if (input instanceof HTMLInputElement) {
       input.focus();
@@ -75,16 +82,30 @@ async function handleOrderClick(event) {
         openOrderVesselLookup(input.value || "");
         return true;
       }
-      if (fieldName === "equipment") {
-        openOrderEquipmentLookup(input.value || "");
-        return true;
-      }
       try {
         input.showPicker?.();
       } catch {
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
       }
     }
+    return true;
+  }
+
+  const equipmentListOpen = event.target.closest("[data-order-equipment-list-open]");
+  if (equipmentListOpen) {
+    readOrderFormDraft();
+    orderState.equipmentPicker = { visible: true };
+    orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
+    renderOrderWorkspace();
+    return true;
+  }
+
+  const equipmentListClose = event.target.closest("[data-order-equipment-list-close]");
+  if (equipmentListClose) {
+    readOrderFormDraft();
+    orderState.equipmentPicker = { visible: false };
+    renderOrderWorkspace();
+    focusOrderInput("[data-order-equipment-list-open]");
     return true;
   }
 
@@ -509,12 +530,13 @@ function selectOrderVessel(assetId) {
   };
   orderState.vesselLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
   orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
+  orderState.equipmentPicker = { visible: false };
   orderState.notice = "선박 선택 완료. 엔진/장비 선택 가능.";
   renderOrderWorkspace();
-  focusOrderInput("[data-order-equipment-input]");
+  focusOrderInput("[data-order-equipment-list-open]");
 }
 
-function selectOrderEquipment(equipmentId) {
+function selectOrderEquipment(equipmentId, options = {}) {
   if (!equipmentId) {
     return;
   }
@@ -527,14 +549,6 @@ function selectOrderEquipment(equipmentId) {
   }
   const displayName = orderEquipmentDisplayName(equipment);
   const existingItems = normalizeOrderEquipmentItems(orderState.draft);
-  const exists = existingItems.some((item) => (equipment.id && item.equipmentId === equipment.id) || item.equipmentName === displayName);
-  if (exists) {
-    orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
-    orderState.notice = "이미 선택된 엔진입니다.";
-    renderOrderWorkspace();
-    focusOrderInput("[data-order-equipment-input]");
-    return;
-  }
   const equipmentItems = [
     ...existingItems,
     {
@@ -545,21 +559,23 @@ function selectOrderEquipment(equipmentId) {
     },
   ];
   const representativeEquipment = representativeOrderEquipment({ equipmentItems });
+  const isFirstEquipment = existingItems.length === 0;
   const draft = {
     ...orderState.draft,
     equipment: representativeEquipment.equipmentName || displayName,
     equipmentId: representativeEquipment.equipmentId || equipment.id || "",
     equipmentItems,
   };
-  if (!String(draft.description || "").trim()) {
+  if (isFirstEquipment && !String(draft.description || "").trim()) {
     draft.description = orderEquipmentOrderName(equipment);
     draft.orderSummary = orderTagsFromDescription(draft.description);
   }
   orderState.draft = draft;
   orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
+  orderState.equipmentPicker = { visible: Boolean(options.keepPickerOpen) };
   orderState.notice = "엔진/장비 선택 완료.";
   renderOrderWorkspace();
-  focusOrderInput("[data-order-type-select]");
+  focusOrderInput(options.keepPickerOpen ? "[data-order-equipment-row-select]" : "[data-order-type-select]");
 }
 
 function removeOrderEquipment(index) {
@@ -580,7 +596,7 @@ function removeOrderEquipment(index) {
   };
   orderState.notice = "엔진 선택을 제거했습니다.";
   renderOrderWorkspace();
-  focusOrderInput("[data-order-equipment-input]");
+  focusOrderInput("[data-order-equipment-list-open]");
 }
 
 function parseOrderDateInput(value) {
@@ -867,6 +883,7 @@ function handleOrderInput(event) {
     orderState.vesselLookup.query = vesselInput.value || "";
     orderState.vesselLookup.awaitingSelection = true;
     orderState.equipmentLookup = { open: false, query: "", activeIndex: 0, awaitingSelection: false };
+    orderState.equipmentPicker = { visible: false };
     return false;
   }
 
@@ -902,6 +919,15 @@ function handleOrderChange(event) {
   const documentContainer = event.target.closest("#order-document-form");
   if (documentContainer) {
     readOrderDocumentDraft(documentContainer);
+    return true;
+  }
+
+  const equipmentRowSelect = event.target.closest("[data-order-equipment-row-select]");
+  if (equipmentRowSelect instanceof HTMLSelectElement) {
+    if (equipmentRowSelect.value === "add") {
+      selectOrderEquipment(equipmentRowSelect.dataset.orderEquipmentRowSelect || "", { keepPickerOpen: true });
+      return true;
+    }
     return true;
   }
 

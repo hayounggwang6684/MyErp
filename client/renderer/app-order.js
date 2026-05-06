@@ -149,6 +149,9 @@ let orderState = {
     activeIndex: 0,
     awaitingSelection: false,
   },
+  equipmentPicker: {
+    visible: false,
+  },
   documentDetail: {
     visible: false,
     orderId: "",
@@ -521,18 +524,12 @@ function normalizeOrderEquipmentItems(order = {}) {
   }
   const items = Array.isArray(source) ? source : [];
   const normalized = [];
-  const seen = new Set();
   for (const item of items) {
     const equipmentId = String(item?.equipmentId || item?.equipment_id || "").trim();
     const equipmentName = String(item?.equipmentName || item?.equipment_name || item?.name || "").trim();
     if (!equipmentId && !equipmentName) {
       continue;
     }
-    const key = equipmentId || equipmentName.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
     normalized.push({
       equipmentId,
       equipmentName,
@@ -981,6 +978,70 @@ function renderOrderEquipmentItems(items = []) {
   `;
 }
 
+function renderOrderEquipmentPickerDialog(current = {}, selectedItems = []) {
+  if (!orderState.equipmentPicker?.visible) {
+    return "";
+  }
+  const vesselName = String(current.vessel || "").trim();
+  const equipments = vesselName ? orderEquipmentOptions(vesselName) : [];
+  const selectedCount = selectedItems.length;
+  return `
+    <div class="order-document-dialog-backdrop">
+      <section class="order-document-dialog order-equipment-dialog">
+        <div class="order-document-dialog-head">
+          <strong>엔진 목록</strong>
+          <button type="button" class="ghost-button" data-order-equipment-list-close>닫기</button>
+        </div>
+        <div class="order-document-dialog-body">
+          <div class="order-doc-title">
+            <span>${escapeTextarea(vesselName || "선박 미선택")}</span>
+            <span>${selectedCount}개 선택</span>
+          </div>
+          <table class="data-table order-document-table">
+            <thead>
+              <tr>
+                <th>선택</th>
+                <th>엔진명</th>
+                <th>구분</th>
+                <th>제조사/모델</th>
+                <th>일련번호</th>
+                <th>위치</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                !vesselName
+                  ? '<tr><td colspan="6" class="order-empty-cell">선박을 먼저 선택하세요.</td></tr>'
+                  : equipments.length
+                    ? equipments
+                        .map(
+                          (equipment) => `
+                            <tr>
+                              <td>
+                                <select class="text-field" data-order-equipment-row-select="${escapeAttribute(equipment.id || "")}">
+                                  <option value="">선택</option>
+                                  <option value="add">추가</option>
+                                </select>
+                              </td>
+                              <td>${escapeTextarea(orderEquipmentDisplayName(equipment))}</td>
+                              <td>${escapeTextarea(orderEquipmentTypeLabel(equipment.equipmentType || ""))}</td>
+                              <td>${escapeTextarea([equipment.manufacturer, equipment.modelName].filter(Boolean).join(" ") || "-")}</td>
+                              <td>${escapeTextarea(equipment.serialNo || "-")}</td>
+                              <td>${escapeTextarea(equipment.installationPosition || equipment.unitNo || "-")}</td>
+                            </tr>
+                          `,
+                        )
+                        .join("")
+                    : '<tr><td colspan="6" class="order-empty-cell">해당 선박에 등록된 엔진이 없습니다.</td></tr>'
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function orderEquipmentByName(vesselName = "", equipmentName = "") {
   const name = String(equipmentName || "");
   return (
@@ -1409,7 +1470,7 @@ function renderOrderDetailPanel(order) {
             <label class="order-lookup-field">매출처 <span class="order-combo-wrap"><input class="text-field" name="customer" data-order-customer-search data-order-combo-input value="${escapeAttribute(current.customer)}" autocomplete="off" /><button type="button" class="order-combo-button" data-order-combo-open="customer" aria-label="매출처 목록 열기">▾</button>${renderOrderCustomerDropdown()}</span></label>
             <label>선사 <span class="order-combo-wrap"><input class="text-field" name="ship_owner" list="order-ship-owner-options" data-order-combo-input value="${escapeAttribute(current.shipOwner || current.customer)}" /><button type="button" class="order-combo-button" data-order-combo-open="ship_owner" aria-label="선사 목록 열기">▾</button></span></label>
             <label class="order-lookup-field">선박 <span class="order-combo-wrap"><input class="text-field" name="vessel" data-order-vessel-input data-order-combo-input value="${escapeAttribute(current.vessel)}" autocomplete="off" /><button type="button" class="order-combo-button" data-order-combo-open="vessel" aria-label="선박 목록 열기">▾</button>${renderOrderVesselDropdown(current.vessel)}</span></label>
-            <label class="order-lookup-field">엔진 <span class="order-combo-wrap"><input class="text-field" name="equipment" data-order-equipment-input data-order-combo-input value="${escapeAttribute(current.equipment)}" autocomplete="off" /><button type="button" class="order-combo-button" data-order-combo-open="equipment" aria-label="엔진 목록 열기">▾</button>${renderOrderEquipmentDropdown(current.vessel, current.equipment)}</span></label>
+            <label class="order-lookup-field">엔진 <span class="order-combo-wrap"><input type="hidden" name="equipment" value="${escapeAttribute(current.equipment)}" /><button type="button" class="secondary-button order-equipment-list-button" data-order-equipment-list-open>엔진 목록</button></span></label>
             <div class="order-wide-field">${renderOrderEquipmentItems(currentEquipmentItems)}</div>
             <label>주문구분 <select class="text-field" name="request_type" data-order-type-select>${orderSelectOptions(ORDER_TYPES, current.requestType)}</select></label>
             <label>세부구분 <select class="text-field" name="order_subtype" data-order-subtype-select>${orderSelectOptions(orderSubtypeOptions(current.requestType), current.orderSubtype)}</select></label>
@@ -1442,6 +1503,7 @@ function renderOrderDetailPanel(order) {
         ${renderOrderDocuments(current)}
       </div>
     </form>
+    ${renderOrderEquipmentPickerDialog(current, currentEquipmentItems)}
   `;
 }
 

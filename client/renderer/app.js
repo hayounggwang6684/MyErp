@@ -214,6 +214,8 @@ let inventoryState = {
   viewMode: "stock",
   listActivated: false,
   summaryFilter: "",
+  stockEditorMode: "edit",
+  stockDraft: null,
   filters: {
     startDate: "2026-04-01",
     endDate: "2026-04-30",
@@ -964,6 +966,93 @@ function findCustomerEquipment(equipmentId) {
     }
   }
   return { asset: null, equipment: null };
+}
+
+function customerEquipmentHistoryRows(equipmentId) {
+  if (!equipmentId) {
+    return [];
+  }
+  return (customerState.selectedCustomer?.equipmentHistory || []).filter((history) => history.equipmentId === equipmentId);
+}
+
+function customerEquipmentSnapshotValue(snapshot, key) {
+  const value = snapshot?.[key];
+  return value === null || value === undefined || value === "" ? "-" : String(value);
+}
+
+function customerEquipmentHistorySummary(history) {
+  const beforeSnapshot = history.beforeSnapshot || {};
+  const afterSnapshot = history.afterSnapshot || {};
+  const fieldLabels = {
+    equipment_name: "호기",
+    equipment_type: "분류",
+    serial_no: "SN",
+    installation_position: "설치 위치",
+    manufacturer: "제조사",
+    model_name: "모델명",
+    notes: "REMARK",
+    deleted_at: "삭제일",
+  };
+  const changed = Object.keys(fieldLabels).filter((key) => customerEquipmentSnapshotValue(beforeSnapshot, key) !== customerEquipmentSnapshotValue(afterSnapshot, key));
+
+  if (!changed.length) {
+    return history.action || "변경";
+  }
+
+  return changed
+    .slice(0, 6)
+    .map((key) => `${fieldLabels[key]}: ${customerEquipmentSnapshotValue(beforeSnapshot, key)} -> ${customerEquipmentSnapshotValue(afterSnapshot, key)}`)
+    .join("\n");
+}
+
+function showCustomerEquipmentHistoryDialog(equipmentId) {
+  const { equipment } = findCustomerEquipment(equipmentId);
+  const historyRows = customerEquipmentHistoryRows(equipmentId);
+  const dialog = document.createElement("div");
+  dialog.className = "app-dialog-backdrop";
+  dialog.setAttribute("role", "presentation");
+
+  const panel = document.createElement("div");
+  panel.className = "app-dialog customer-equipment-history-dialog";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+
+  const title = document.createElement("h3");
+  title.className = "app-dialog-title";
+  title.textContent = `장비 변경 이력${equipment?.equipmentName ? ` - ${equipment.equipmentName}` : ""}`;
+
+  const body = document.createElement("div");
+  body.className = "customer-equipment-history-body";
+  body.innerHTML = historyRows.length
+    ? historyRows
+        .map(
+          (history) => `
+            <div class="customer-equipment-history-row">
+              <div class="customer-equipment-history-meta">
+                <strong>${escapeTextarea(history.action || "변경")}</strong>
+                <span>${escapeTextarea(String(history.createdAt || "").replace("T", " ").slice(0, 16) || "-")}</span>
+                <span>${escapeTextarea(history.createdByName || "-")}</span>
+              </div>
+              <pre>${escapeTextarea(customerEquipmentHistorySummary(history))}</pre>
+            </div>
+          `,
+        )
+        .join("")
+    : '<div class="empty-inline">장비 변경 이력이 없습니다.</div>';
+
+  const actions = document.createElement("div");
+  actions.className = "app-dialog-actions";
+  actions.innerHTML = '<button type="button" class="primary-button">닫기</button>';
+  actions.querySelector("button")?.addEventListener("click", () => dialog.remove());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) {
+      dialog.remove();
+    }
+  });
+
+  panel.append(title, body, actions);
+  dialog.appendChild(panel);
+  document.body.appendChild(dialog);
 }
 
 function customerListItemById(customerId) {
@@ -1810,47 +1899,56 @@ function renderCustomerWorkspace() {
   const equipmentFormTarget = equipmentEditorMode === "edit" ? selectedEquipment : null;
   const currentManufacturer = canonicalEquipmentMasterValue("manufacturer", equipmentFormTarget?.manufacturer || manufacturerOptions[0] || "");
   const currentModelOptions = Array.from(new Set([...equipmentModelOptionsFor(selected, currentManufacturer), equipmentFormTarget?.modelName].filter(Boolean)));
+  const selectedEquipmentHistoryButtonId = equipmentFormTarget?.id || selectedEquipment?.id || customerState.selectedEquipmentId || "";
+  const selectedEquipmentHistoryCount = customerEquipmentHistoryRows(selectedEquipmentHistoryButtonId).length;
   const equipmentEditorMarkup = selectedAsset
     ? `
-      <form id="customer-equipment-form" class="customer-equipment-editor" style="gap: 6px; padding-top: 6px;">
+      <form id="customer-equipment-form" class="customer-equipment-editor customer-equipment-form-compact">
         <input type="hidden" name="asset_id" value="${escapeAttribute(selectedAsset.id)}" />
         <input type="hidden" name="equipment_id" value="${escapeAttribute(equipmentFormTarget?.id || "")}" />
-	        <div class="customer-equipment-editor-head" style="gap: 8px;">
-	          <strong>${equipmentEditorMode === "create" ? "장비 신규 추가" : "장비 정보 변경"}</strong>
-	          ${
-              equipmentFormTarget
-                ? `<span class="table-subtext">등록 ${escapeTextarea(equipmentFormTarget.createdByName || "-")} / 수정 ${escapeTextarea(equipmentFormTarget.updatedByName || "-")}</span>`
+		        <div class="customer-equipment-editor-head">
+		          <strong>${equipmentEditorMode === "create" ? "장비 신규 추가" : "장비 정보 변경"}</strong>
+		          ${
+	              equipmentFormTarget
+	                ? `<span class="table-subtext">등록 ${escapeTextarea(equipmentFormTarget.createdByName || "-")} / 수정 ${escapeTextarea(equipmentFormTarget.updatedByName || "-")}</span>`
                 : ""
             }
-	          <button type="button" class="customer-add-row compact" data-customer-equipment-new>${equipmentEditorMode === "create" ? "신규 입력 중" : "+ 장비 신규"}</button>
+		          <button type="button" class="customer-add-row compact" data-customer-equipment-new>${equipmentEditorMode === "create" ? "신규 입력 중" : "+ 장비 신규"}</button>
+		        </div>
+	        <div class="customer-equipment-editor-fields">
+	          <select class="text-field" name="equipment_type" data-master-field="equipment_type" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentType || "MAIN_ENGINE")}">
+	            ${equipmentTypeOptions
+	              .map(([value, label]) => `<option value="${escapeAttribute(value)}"${equipmentFormTarget?.equipmentType === value || (!equipmentFormTarget && value === "MAIN_ENGINE") ? " selected" : ""}>${escapeTextarea(label)}</option>`)
+	              .join("")}
+	            <option value="__add_new__">새 항목 추가</option>
+	          </select>
+	          <select class="text-field" name="equipment_name" data-master-field="equipment_unit" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentName || "")}" required>
+	            <option value=""${equipmentFormTarget?.equipmentName ? "" : " selected"}>호기/장비명</option>
+	            ${customerSelectOptions(equipmentUnitOptions, equipmentFormTarget?.equipmentName || "")}
+	            <option value="__add_new__">새 항목 추가</option>
+	          </select>
+	          <select class="text-field" name="manufacturer" data-master-field="manufacturer" data-current-value="${escapeAttribute(currentManufacturer)}">
+	            <option value=""${currentManufacturer ? "" : " selected"}>제조사</option>
+	            ${customerSelectOptions(manufacturerOptions, currentManufacturer)}
+	            <option value="__add_new__">새 항목 추가</option>
+	          </select>
+	          <select class="text-field" name="model_name" data-master-field="model_name" data-current-value="${escapeAttribute(equipmentFormTarget?.modelName || "")}" data-customer-model-select>
+	            <option value=""${equipmentFormTarget?.modelName ? "" : " selected"}>모델명</option>
+	            ${customerSelectOptions(currentModelOptions, equipmentFormTarget?.modelName || "")}
+	            <option value="__add_new__">새 항목 추가</option>
+	          </select>
+	          <input class="text-field" name="serial_no" placeholder="SN" value="${escapeAttribute(equipmentFormTarget?.serialNo || "")}" />
+	          <input class="text-field" name="installation_position" placeholder="설치 위치" value="${escapeAttribute(equipmentFormTarget?.installationPosition || "")}" />
+	          <textarea class="text-area" name="notes" placeholder="REMARK">${escapeTextarea(equipmentFormTarget?.notes || "")}</textarea>
 	        </div>
-        <div class="customer-equipment-editor-fields" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;">
-          <select class="text-field" name="equipment_type" data-master-field="equipment_type" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentType || "MAIN_ENGINE")}" style="min-height: 40px; height: 42px;">
-            ${equipmentTypeOptions
-              .map(([value, label]) => `<option value="${escapeAttribute(value)}"${equipmentFormTarget?.equipmentType === value || (!equipmentFormTarget && value === "MAIN_ENGINE") ? " selected" : ""}>${escapeTextarea(label)}</option>`)
-              .join("")}
-            <option value="__add_new__">새 항목 추가</option>
-          </select>
-          <select class="text-field" name="equipment_name" data-master-field="equipment_unit" data-current-value="${escapeAttribute(equipmentFormTarget?.equipmentName || "")}" required style="min-height: 40px; height: 42px;">
-            <option value=""${equipmentFormTarget?.equipmentName ? "" : " selected"}>호기/장비명</option>
-            ${customerSelectOptions(equipmentUnitOptions, equipmentFormTarget?.equipmentName || "")}
-            <option value="__add_new__">새 항목 추가</option>
-          </select>
-          <select class="text-field" name="manufacturer" data-master-field="manufacturer" data-current-value="${escapeAttribute(currentManufacturer)}" style="min-height: 40px; height: 42px;">
-            <option value=""${currentManufacturer ? "" : " selected"}>제조사</option>
-            ${customerSelectOptions(manufacturerOptions, currentManufacturer)}
-            <option value="__add_new__">새 항목 추가</option>
-          </select>
-          <select class="text-field" name="model_name" data-master-field="model_name" data-current-value="${escapeAttribute(equipmentFormTarget?.modelName || "")}" data-customer-model-select style="min-height: 40px; height: 42px;">
-            <option value=""${equipmentFormTarget?.modelName ? "" : " selected"}>모델명</option>
-            ${customerSelectOptions(currentModelOptions, equipmentFormTarget?.modelName || "")}
-            <option value="__add_new__">새 항목 추가</option>
-          </select>
-          <input class="text-field" name="serial_no" placeholder="SN" value="${escapeAttribute(equipmentFormTarget?.serialNo || "")}" style="min-height: 40px; height: 42px;" />
-          <input class="text-field" name="installation_position" placeholder="설치 위치" value="${escapeAttribute(equipmentFormTarget?.installationPosition || "")}" style="min-height: 40px; height: 42px;" />
-          <textarea class="text-area" name="notes" placeholder="REMARK" style="min-height: 42px;">${escapeTextarea(equipmentFormTarget?.notes || "")}</textarea>
+        <div class="customer-equipment-editor-actions">
+          <button class="secondary-button" type="submit">${equipmentEditorMode === "create" ? "장비 추가" : "장비 변경 저장"}</button>
+          ${
+            selectedEquipmentHistoryButtonId
+              ? `<button class="secondary-button customer-equipment-history-button" type="button" data-customer-equipment-history="${escapeAttribute(selectedEquipmentHistoryButtonId)}">변경 이력${selectedEquipmentHistoryCount ? ` (${selectedEquipmentHistoryCount})` : ""}</button>`
+              : ""
+          }
         </div>
-        <button class="secondary-button" type="submit" style="min-height: 38px;">${equipmentEditorMode === "create" ? "장비 추가" : "장비 변경 저장"}</button>
       </form>
     `
     : `
@@ -1894,15 +1992,11 @@ function renderCustomerWorkspace() {
             ${customerSortButtonMarkup("equipment", "serial_no", "SN")}
             ${customerSortButtonMarkup("equipment", "notes", "REMARK")}
           </div>
-	          <div class="customer-equipment-list" style="flex: 0 0 224px; height: 224px; min-height: 224px;">
-	            ${equipmentRowsMarkup}
-	          </div>
-	          ${equipmentEditorMarkup}
-	          <article class="customer-section-card">
-	            <h4 class="section-mini-title">장비 변경 이력</h4>
-	            ${equipmentHistoryMarkup}
-	          </article>
-	        </article>
+		          <div class="customer-equipment-list">
+		            ${equipmentRowsMarkup}
+		          </div>
+		          ${equipmentEditorMarkup}
+		        </article>
 	      </section>
 	      <article class="customer-section-card">
 	        <h4 class="section-mini-title">업체 병합 이력</h4>
@@ -2769,8 +2863,90 @@ function filteredInventorySales() {
 }
 
 function selectedInventoryItem() {
+  if (inventoryState.stockEditorMode === "create") {
+    return inventoryState.stockDraft;
+  }
   const items = filteredInventoryItems();
   return items.find((item) => item.id === inventoryState.selectedItemId) || items[0] || null;
+}
+
+function buildNextInventoryPartId() {
+  let maxSequence = 0;
+  for (const item of inventoryState.items || []) {
+    const match = String(item.id || "").match(/^PART-(\d+)$/);
+    if (match) {
+      maxSequence = Math.max(maxSequence, Number(match[1]));
+    }
+  }
+  return `PART-${String(maxSequence + 1).padStart(3, "0")}`;
+}
+
+function buildNextInventoryPartNo() {
+  let maxSequence = 0;
+  for (const item of inventoryState.items || []) {
+    const match = String(item.no || "").match(/^PRT-\d{4}-(\d+)$/);
+    if (match) {
+      maxSequence = Math.max(maxSequence, Number(match[1]));
+    }
+  }
+  return `PRT-2026-${String(maxSequence + 1).padStart(3, "0")}`;
+}
+
+function createInventoryStockDraft() {
+  return {
+    id: buildNextInventoryPartId(),
+    no: buildNextInventoryPartNo(),
+    category: "",
+    supplier: "",
+    name: "",
+    code: "",
+    manufacturer: "",
+    targetModel: "",
+    description: "",
+    status: "정상",
+    onHand: 0,
+    safetyStock: 0,
+    inboundPending: 0,
+    outboundPlanned: 0,
+    unit: "EA",
+    location: "",
+    purchaseLeadTime: "",
+    lastInDate: "",
+    documents: [],
+    movements: [],
+    purchaseOrders: [],
+    note: "",
+  };
+}
+
+function numberFromInventoryForm(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function inventoryStockFromForm(form, current = {}) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  return {
+    ...current,
+    no: String(data.no || current.no || "").trim(),
+    category: String(data.category || "").trim(),
+    supplier: String(data.supplier || "").trim(),
+    name: String(data.name || "").trim(),
+    code: String(data.code || "").trim(),
+    manufacturer: String(data.manufacturer || "").trim(),
+    targetModel: String(data.target_model || "").trim(),
+    description: String(data.description || "").trim(),
+    status: String(data.status || "정상").trim(),
+    onHand: numberFromInventoryForm(data.on_hand),
+    safetyStock: numberFromInventoryForm(data.safety_stock),
+    inboundPending: numberFromInventoryForm(data.inbound_pending),
+    outboundPlanned: numberFromInventoryForm(data.outbound_planned),
+    unit: String(data.unit || "").trim(),
+    location: String(data.location || "").trim(),
+    purchaseLeadTime: String(data.purchase_lead_time || "").trim(),
+    lastInDate: String(data.last_in_date || "").trim(),
+    note: String(data.note || "").trim(),
+  };
 }
 
 function selectedInventorySales() {
@@ -2949,23 +3125,28 @@ function renderInventoryWorkspace() {
               </section>
             `
             : `
-              <section class="project-panel">
+              <form class="project-panel" data-inventory-stock-form>
                 <div class="project-form-grid">
-                  <label><span>품목번호</span><input class="text-field" value="${escapeAttribute(selected.no)}" readonly /></label>
-                  <label><span>분류</span><input class="text-field" value="${escapeAttribute(selected.category)}" readonly /></label>
-                  <label><span>공급처</span><input class="text-field" value="${escapeAttribute(selected.supplier)}" readonly /></label>
-                  <label><span>품목명</span><input class="text-field" value="${escapeAttribute(selected.name)}" readonly /></label>
-                  <label><span>품번/코드</span><input class="text-field" value="${escapeAttribute(selected.code)}" readonly /></label>
-                  <label><span>제조사</span><input class="text-field" value="${escapeAttribute(selected.manufacturer || "")}" readonly /></label>
-                  <label><span>대상</span><input class="text-field" value="${escapeAttribute(selected.targetModel || "")}" readonly /></label>
-                  <label><span>상태</span><input class="text-field" value="${escapeAttribute(selected.status)}" readonly /></label>
-                  <label class="project-form-full"><span>설명</span><textarea class="text-field" readonly>${escapeTextarea(selected.description || "")}</textarea></label>
+                  <label><span>품목번호</span><input class="text-field" name="no" value="${escapeAttribute(selected.no || "")}" /></label>
+                  <label><span>분류</span><input class="text-field" name="category" value="${escapeAttribute(selected.category || "")}" /></label>
+                  <label><span>공급처</span><input class="text-field" name="supplier" value="${escapeAttribute(selected.supplier || "")}" /></label>
+                  <label><span>품목명</span><input class="text-field" name="name" value="${escapeAttribute(selected.name || "")}" /></label>
+                  <label><span>품번/코드</span><input class="text-field" name="code" value="${escapeAttribute(selected.code || "")}" /></label>
+                  <label><span>제조사</span><input class="text-field" name="manufacturer" value="${escapeAttribute(selected.manufacturer || "")}" /></label>
+                  <label><span>대상</span><input class="text-field" name="target_model" value="${escapeAttribute(selected.targetModel || "")}" /></label>
+                  <label><span>상태</span><select class="text-field" name="status">${["정상", "발주 필요", "입고 대기"].map((value) => `<option value="${escapeAttribute(value)}"${selected.status === value ? " selected" : ""}>${value}</option>`).join("")}</select></label>
+                  <label><span>현재고</span><input class="text-field" type="number" name="on_hand" value="${escapeAttribute(String(selected.onHand ?? 0))}" /></label>
+                  <label><span>적정재고</span><input class="text-field" type="number" name="safety_stock" value="${escapeAttribute(String(selected.safetyStock ?? 0))}" /></label>
+                  <label><span>발주</span><input class="text-field" type="number" name="inbound_pending" value="${escapeAttribute(String(selected.inboundPending ?? 0))}" /></label>
+                  <label><span>출고 예정</span><input class="text-field" type="number" name="outbound_planned" value="${escapeAttribute(String(selected.outboundPlanned ?? 0))}" /></label>
+                  <label><span>단위</span><input class="text-field" name="unit" value="${escapeAttribute(selected.unit || "")}" /></label>
+                  <label><span>보관 위치</span><input class="text-field" name="location" value="${escapeAttribute(selected.location || "")}" /></label>
+                  <label><span>리드타임</span><input class="text-field" name="purchase_lead_time" value="${escapeAttribute(selected.purchaseLeadTime || "")}" /></label>
+                  <label><span>최근 입고일</span><input class="text-field" type="date" name="last_in_date" value="${escapeAttribute(selected.lastInDate || "")}" /></label>
+                  <label class="project-form-full"><span>설명</span><textarea class="text-field" name="description">${escapeTextarea(selected.description || "")}</textarea></label>
+                  <label class="project-form-full"><span>메모</span><textarea class="text-field" name="note">${escapeTextarea(selected.note || "")}</textarea></label>
                 </div>
-                <section class="project-panel" style="margin-top:12px;">
-                  <p class="eyebrow">메모</p>
-                  <p class="detail">${escapeTextarea(selected.note || "-")}</p>
-                </section>
-              </section>
+              </form>
             `;
 
   assetWorkspace.innerHTML = `
@@ -3050,7 +3231,10 @@ function renderInventoryWorkspace() {
               <h3>${selected ? isSalesView ? selected.itemName : selected.name : isSalesView ? "선택된 판매 없음" : "선택된 부품 없음"}</h3>
               <p class="detail">${selected ? isSalesView ? `${selected.customer} · ${selected.code}` : `${selected.supplier} · ${selected.code}` : `좌측 목록에서 ${isSalesView ? "판매" : "품목"}을 선택하세요.`}</p>
             </div>
-            <span class="status-badge neutral">${selected ? selected.status : "대기"}</span>
+            <div class="project-detail-actions">
+              ${!isSalesView && selected && inventoryState.activeDetailTab === "overview" ? '<button type="button" class="primary-button" data-inventory-stock-save>저장</button>' : ""}
+              <span class="status-badge neutral">${selected ? selected.status : "대기"}</span>
+            </div>
           </div>
           <div class="project-detail-tabs">
             ${detailTabs.map(([key, label]) => `<button type="button" class="project-detail-tab${inventoryState.activeDetailTab === key ? " active" : ""}" data-inventory-detail-tab="${key}">${label}</button>`).join("")}
@@ -3074,6 +3258,32 @@ function handleInventoryMouseDown(event) {
     startX: event.clientX,
     startWidth: getInventoryPaneWidth(),
   };
+  return true;
+}
+
+async function saveInventoryStockForm(form) {
+  const current = inventoryState.stockEditorMode === "create"
+    ? inventoryState.stockDraft || createInventoryStockDraft()
+    : inventoryState.items.find((item) => item.id === inventoryState.selectedItemId) || {};
+  const saved = inventoryStockFromForm(form, current);
+  if (!saved.name || !saved.code) {
+    await showAppMessage("품목명과 품번/코드는 필수입니다.", "재고관리");
+    return true;
+  }
+  if (inventoryState.stockEditorMode === "create") {
+    const nextItem = { ...saved, id: current.id || buildNextInventoryPartId() };
+    inventoryState.items = [nextItem, ...inventoryState.items];
+    inventoryState.selectedItemId = nextItem.id;
+    inventoryState.stockEditorMode = "edit";
+    inventoryState.stockDraft = null;
+    inventoryState.listActivated = true;
+    inventoryState.summaryFilter = "";
+    inventoryState.filters = { ...inventoryState.filters, status: "", category: "", supplier: "", query: "" };
+  } else {
+    inventoryState.items = inventoryState.items.map((item) => (item.id === current.id ? { ...saved, id: current.id } : item));
+  }
+  renderInventoryWorkspace();
+  await showAppMessage("재고 정보를 저장했습니다.", "재고관리");
   return true;
 }
 
@@ -3102,6 +3312,8 @@ async function handleInventoryClick(event) {
       inventoryState.selectedSalesId = selectButton.dataset.inventorySelect || "";
     } else {
       inventoryState.selectedItemId = selectButton.dataset.inventorySelect || "";
+      inventoryState.stockEditorMode = "edit";
+      inventoryState.stockDraft = null;
     }
     renderInventoryWorkspace();
     return true;
@@ -3126,8 +3338,19 @@ async function handleInventoryClick(event) {
     };
     inventoryState.listActivated = false;
     inventoryState.summaryFilter = "";
+    inventoryState.stockEditorMode = "edit";
+    inventoryState.stockDraft = null;
     renderInventoryWorkspace();
     return true;
+  }
+
+  const stockSaveButton = event.target.closest("[data-inventory-stock-save]");
+  if (stockSaveButton) {
+    const form = dashboardMainPane.querySelector("[data-inventory-stock-form]");
+    if (!form) {
+      return true;
+    }
+    return saveInventoryStockForm(form);
   }
 
   const outboundCommandButton = event.target.closest("[data-inventory-outbound-command]");
@@ -3153,7 +3376,16 @@ async function handleInventoryClick(event) {
 
   const newButton = event.target.closest("[data-inventory-new]");
   if (newButton) {
-    await showAppMessage(`${inventoryState.viewMode === "sales" ? "판매관리" : "재고관리"} 신규 등록 서버 연동은 다음 단계입니다.`, "부품관리");
+    if (inventoryState.viewMode === "sales") {
+      await showAppMessage("판매관리는 주문관리에서 판매로 잡힌 주문을 기준으로 표시합니다.", "판매관리");
+      return true;
+    }
+    inventoryState.viewMode = "stock";
+    inventoryState.activeDetailTab = "overview";
+    inventoryState.stockEditorMode = "create";
+    inventoryState.stockDraft = createInventoryStockDraft();
+    inventoryState.selectedItemId = inventoryState.stockDraft.id;
+    renderInventoryWorkspace();
     return true;
   }
 
@@ -3540,6 +3772,27 @@ function scheduleAssetSearchRender(selector, value) {
     renderAssetSearchAndRestore(selector);
   }, 120);
   assetSearchRenderTimers.set(selector, timer);
+}
+
+function cancelAssetSearchRender(selector = "") {
+  if (selector) {
+    const currentTimer = assetSearchRenderTimers.get(selector);
+    if (currentTimer) {
+      clearTimeout(currentTimer);
+    }
+    assetSearchRenderTimers.delete(selector);
+    return;
+  }
+  for (const timer of assetSearchRenderTimers.values()) {
+    clearTimeout(timer);
+  }
+  assetSearchRenderTimers.clear();
+}
+
+function renderAssetSearchFromInput(selector, value) {
+  cancelAssetSearchRender(selector);
+  syncAssetSearchValue(selector, value);
+  renderAssetSearchAndRestore(selector);
 }
 
 function assetFilterMenu(column, physicalFilters) {
@@ -5030,6 +5283,12 @@ dashboardMainPane.addEventListener("click", async (event) => {
     return;
   }
 
+  const equipmentHistoryButton = event.target.closest("[data-customer-equipment-history]");
+  if (equipmentHistoryButton) {
+    showCustomerEquipmentHistoryDialog(equipmentHistoryButton.dataset.customerEquipmentHistory || "");
+    return;
+  }
+
   const equipmentNewButton = event.target.closest("[data-customer-equipment-new]");
   if (equipmentNewButton) {
     if (!(await confirmCustomerInlineEditBeforeLeave())) {
@@ -5090,6 +5349,32 @@ dashboardMainPane.addEventListener("keydown", async (event) => {
     customerMasterSelect.blur();
     customerMasterSelect.dispatchEvent(new Event("change", { bubbles: true }));
     return;
+  }
+
+  if (event.key === "Enter" && !event.isComposing && !assetSearchComposing) {
+    const knowledgeSearch = event.target.closest("[data-asset-knowledge-search]");
+    if (knowledgeSearch) {
+      event.preventDefault();
+      event.stopPropagation();
+      renderAssetSearchFromInput("[data-asset-knowledge-search]", knowledgeSearch.value || "");
+      return;
+    }
+
+    const knowledgeTagSearch = event.target.closest("[data-asset-knowledge-tag-search]");
+    if (knowledgeTagSearch) {
+      event.preventDefault();
+      event.stopPropagation();
+      renderAssetSearchFromInput("[data-asset-knowledge-tag-search]", knowledgeTagSearch.value || "");
+      return;
+    }
+
+    const assetQueryFilter = event.target.closest('[data-asset-physical-filter="query"]');
+    if (assetQueryFilter) {
+      event.preventDefault();
+      event.stopPropagation();
+      renderAssetSearchFromInput('[data-asset-physical-filter="query"]', assetQueryFilter.value || "");
+      return;
+    }
   }
 
   if (await handleOrderKeydown(event)) {
@@ -5329,6 +5614,11 @@ dashboardMainPane.addEventListener("submit", async (event) => {
     return;
   }
 
+  if (form.matches("[data-inventory-stock-form]")) {
+    await saveInventoryStockForm(form);
+    return;
+  }
+
   try {
   if (form.id === "customer-search-form") {
       const formData = Object.fromEntries(new FormData(form).entries());
@@ -5423,10 +5713,6 @@ dashboardMainPane.addEventListener("input", (event) => {
   if (knowledgeSearch) {
     const value = knowledgeSearch.value || "";
     assetState.knowledgeSearch = value;
-    if (assetSearchComposing || event.isComposing) {
-      return;
-    }
-    scheduleAssetSearchRender("[data-asset-knowledge-search]", value);
     return;
   }
 
@@ -5434,10 +5720,6 @@ dashboardMainPane.addEventListener("input", (event) => {
   if (knowledgeTagSearch) {
     const value = knowledgeTagSearch.value || "";
     assetState.knowledgeTagSearch = value;
-    if (assetSearchComposing || event.isComposing) {
-      return;
-    }
-    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]", value);
     return;
   }
 
@@ -5449,12 +5731,7 @@ dashboardMainPane.addEventListener("input", (event) => {
       ...assetState.physicalFilters,
       [key]: value,
     };
-    if (assetSearchComposing || event.isComposing) {
-      return;
-    }
-    if (key === "query") {
-      scheduleAssetSearchRender('[data-asset-physical-filter="query"]', value);
-    } else {
+    if (key !== "query") {
       renderAssetWorkspace();
     }
     return;
@@ -5470,12 +5747,19 @@ dashboardMainPane.addEventListener("input", (event) => {
 });
 
 dashboardMainPane.addEventListener("compositionstart", (event) => {
-  if (
-    event.target.closest("[data-asset-knowledge-search]")
-    || event.target.closest("[data-asset-knowledge-tag-search]")
-    || event.target.closest("[data-asset-physical-filter]")
-  ) {
+  const knowledgeSearch = event.target.closest("[data-asset-knowledge-search]");
+  const knowledgeTagSearch = event.target.closest("[data-asset-knowledge-tag-search]");
+  const assetQueryFilter = event.target.closest('[data-asset-physical-filter="query"]');
+  const assetFilter = event.target.closest("[data-asset-physical-filter]");
+  if (knowledgeSearch || knowledgeTagSearch || assetFilter) {
     assetSearchComposing = true;
+    if (knowledgeSearch) {
+      cancelAssetSearchRender("[data-asset-knowledge-search]");
+    } else if (knowledgeTagSearch) {
+      cancelAssetSearchRender("[data-asset-knowledge-tag-search]");
+    } else if (assetQueryFilter) {
+      cancelAssetSearchRender('[data-asset-physical-filter="query"]');
+    }
   }
 });
 
@@ -5485,7 +5769,6 @@ dashboardMainPane.addEventListener("compositionend", (event) => {
   if (knowledgeSearch) {
     const value = knowledgeSearch.value || "";
     assetState.knowledgeSearch = value;
-    scheduleAssetSearchRender("[data-asset-knowledge-search]", value);
     return;
   }
 
@@ -5493,7 +5776,6 @@ dashboardMainPane.addEventListener("compositionend", (event) => {
   if (knowledgeTagSearch) {
     const value = knowledgeTagSearch.value || "";
     assetState.knowledgeTagSearch = value;
-    scheduleAssetSearchRender("[data-asset-knowledge-tag-search]", value);
     return;
   }
 
@@ -5505,15 +5787,25 @@ dashboardMainPane.addEventListener("compositionend", (event) => {
       ...assetState.physicalFilters,
       [key]: value,
     };
-    if (key === "query") {
-      scheduleAssetSearchRender('[data-asset-physical-filter="query"]', value);
-    } else {
+    if (key !== "query") {
       renderAssetWorkspace();
     }
   }
 });
 
 dashboardMainPane.addEventListener("change", (event) => {
+  const knowledgeSearch = event.target.closest("[data-asset-knowledge-search]");
+  if (knowledgeSearch) {
+    renderAssetSearchFromInput("[data-asset-knowledge-search]", knowledgeSearch.value || "");
+    return;
+  }
+
+  const knowledgeTagSearch = event.target.closest("[data-asset-knowledge-tag-search]");
+  if (knowledgeTagSearch) {
+    renderAssetSearchFromInput("[data-asset-knowledge-tag-search]", knowledgeTagSearch.value || "");
+    return;
+  }
+
   const assetFilter = event.target.closest("[data-asset-physical-filter]");
   if (assetFilter) {
     const key = assetFilter.dataset.assetPhysicalFilter || "";
@@ -5521,6 +5813,10 @@ dashboardMainPane.addEventListener("change", (event) => {
       ...assetState.physicalFilters,
       [key]: assetFilter.value || "",
     };
+    if (key === "query") {
+      renderAssetSearchFromInput('[data-asset-physical-filter="query"]', assetFilter.value || "");
+      return;
+    }
     renderAssetWorkspace();
     return;
   }

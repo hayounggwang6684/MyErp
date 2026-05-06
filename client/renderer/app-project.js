@@ -673,6 +673,7 @@ function normalizeQuotationDraft(quotation, project = null) {
     customer: String(quotation?.customer || project?.customer || ""),
     vessel: String(quotation?.vessel || project?.vessel || ""),
     equipment: String(quotation?.equipment || project?.equipment || ""),
+    managementNo: String(quotation?.managementNo || quotation?.management_no || project?.managementNo || ""),
     title: String(quotation?.title || project?.name || "견적서"),
     note: String(quotation?.note || quotation?.quoteNote || ""),
     updatedAt: String(quotation?.updatedAt || createdDate),
@@ -1020,6 +1021,11 @@ function readQuotationDraftFromForm(form) {
       status: String(data.status || "작성중"),
       templateId: String(data.template_id || ""),
       writer: String(data.writer || ""),
+      managementNo: String(data.management_no || ""),
+      customer: String(data.customer || ""),
+      vessel: String(data.vessel || ""),
+      equipment: String(data.equipment || ""),
+      title: String(data.title || ""),
       supplyAmount: totals.supply,
       vatAmount: totals.vat,
       negotiatedAmount: totals.supply,
@@ -1079,7 +1085,7 @@ function quotationPrintHtml(quotation) {
     ["수신", normalized.customer || project?.customer || "-"],
     ["참조", ""],
     ["선명", normalized.vessel || project?.vessel || "-"],
-    ["수주번호", project?.managementNo || project?.estimateNo || "-"],
+    ["수주번호", normalized.managementNo || project?.managementNo || project?.estimateNo || "-"],
     ["SUBJECT", normalized.title || project?.name || "견적서"],
   ];
   const supplierRows = [
@@ -1671,6 +1677,7 @@ function renderProjectQuotationModal() {
   const project = selectedProject();
   const quotation = normalizeQuotationDraft(projectState.quotationModal.draft || defaultQuotationForProject(project), project);
   const templates = loadQuotationTemplates();
+  const activeTemplate = quotationTemplateForDraft(quotation);
   const selectedItemIndexes = normalizeProjectQuotationSelection(projectState.quotationModal.selectedItemIndexes, quotation.items.length);
   const clipboardReady = Boolean(projectState.quotationModal.clipboardItems?.length);
   const contextMenu = projectState.quotationModal.contextMenu || { visible: false, x: 0, y: 0 };
@@ -1684,6 +1691,14 @@ function renderProjectQuotationModal() {
         <form id="project-quotation-form" class="project-modal-body">
           <input type="hidden" name="title" value="${escapeAttribute(quotation.title || project?.name || "견적서")}" />
           <input type="hidden" name="quotation_no" value="${escapeAttribute(quotation.quotationNo || "")}" />
+          <input type="hidden" name="management_no" value="${escapeAttribute(quotation.managementNo || project?.managementNo || "")}" />
+          <input type="hidden" name="customer" value="${escapeAttribute(quotation.customer || project?.customer || "")}" />
+          <input type="hidden" name="vessel" value="${escapeAttribute(quotation.vessel || project?.vessel || "")}" />
+          <input type="hidden" name="equipment" value="${escapeAttribute(quotation.equipment || project?.equipment || "")}" />
+          <input type="hidden" name="created_date" value="${escapeAttribute(quotation.createdDate || "")}" />
+          <input type="hidden" name="issued_date" value="${escapeAttribute(quotation.issuedDate || "")}" />
+          <input type="hidden" name="currency" value="${escapeAttribute(quotation.currency || "KRW")}" />
+          <input type="hidden" name="writer" value="${escapeAttribute(quotation.writer || "")}" />
           <div class="project-quotation-context">
             <span><b>관리번호</b>${escapeTextarea(project?.managementNo || "-")}</span>
             <span><b>견적번호</b>${escapeTextarea(quotation.quotationNo || "-")}</span>
@@ -1695,11 +1710,8 @@ function renderProjectQuotationModal() {
           <div class="project-quotation-layout" style="${projectQuotationLayoutStyle()}">
             <aside class="project-quotation-form-grid">
               <label>템플릿 <select class="text-field" name="template_id" data-project-template-apply><option value="">선택 안 함</option>${templates.map((template) => `<option value="${escapeAttribute(template.id)}"${template.id === quotation.templateId ? " selected" : ""}>${escapeTextarea(template.name)}</option>`).join("")}</select></label>
-              <label>작성일 <input class="text-field" type="date" name="created_date" value="${escapeAttribute(quotation.createdDate || "")}" /></label>
-              <label>발행일 <input class="text-field" type="date" name="issued_date" value="${escapeAttribute(quotation.issuedDate || "")}" /></label>
-              <label>통화 <select class="text-field" name="currency">${projectCurrencyOptions(quotation.currency)}</select></label>
+              ${renderProjectQuotationMappedFields(activeTemplate, quotation, project)}
               <label>상태 <select class="text-field" name="status">${quotationStatusOptions(quotation.status)}</select></label>
-              <label>작성자 <input class="text-field" name="writer" value="${escapeAttribute(quotation.writer || "")}" /></label>
               <label>공급가 <input class="text-field" type="number" name="supply_amount" value="${escapeAttribute(String(quotation.supplyAmount || 0))}" /></label>
               <label>부가세 <input class="text-field" type="number" name="vat_amount" value="${escapeAttribute(String(quotation.vatAmount || 0))}" /></label>
               <label>네고가 <input class="text-field" type="number" name="negotiated_amount" value="${escapeAttribute(String(quotation.negotiatedAmount || 0))}" /></label>
@@ -1716,7 +1728,7 @@ function renderProjectQuotationModal() {
                   const readOnlyQuantity = quantityEnabled ? "" : " readonly";
                   const readOnlyAmount = amountEnabled ? "" : " readonly";
                   return `
-                    <div class="project-quotation-item-row${selectedItemIndexes.includes(index) ? " selected" : ""}" data-quotation-item-row="${index}" data-project-quotation-item-select="${index}" title="Ctrl/Cmd+클릭 다중 선택, 우클릭 메뉴">
+                    <div class="project-quotation-item-row${selectedItemIndexes.includes(index) ? " selected" : ""}" data-quotation-item-row="${index}" data-project-quotation-item-select="${index}" title="Ctrl/Cmd+클릭 다중 선택, 우클릭 메뉴" onkeydown="return handleProjectQuotationGridKeydown(event)">
                       <select class="text-field" name="item_category_${index}">${quotationCategoryOptions(normalizedItem.category || "")}</select>
                       <input class="text-field" name="item_line_no_${index}" value="${blank ? "" : escapeAttribute(String(normalizedItem.lineNo || ""))}"${blank ? " readonly" : ""} />
                       <input class="text-field" name="item_code_${index}" value="${blank ? "" : escapeAttribute(normalizedItem.code || "")}"${blank ? " readonly" : ""} />
@@ -1755,6 +1767,58 @@ function renderProjectQuotationModal() {
           <button type="button" class="secondary-button" data-project-quotation-close>닫기</button>
         </footer>
       </section>
+    </div>
+  `;
+}
+
+function projectQuotationMappedFieldValue(fieldKey, quotation, project) {
+  const values = {
+    managementNo: quotation.managementNo || project?.managementNo || "",
+    quotationNo: quotation.quotationNo || "",
+    customer: quotation.customer || project?.customer || "",
+    vessel: quotation.vessel || project?.vessel || "",
+    equipment: quotation.equipment || project?.equipment || "",
+    projectName: quotation.title || project?.name || "",
+    createdDate: quotation.createdDate || "",
+    issuedDate: quotation.issuedDate || "",
+    currency: quotation.currency || "KRW",
+    writer: quotation.writer || "",
+  };
+  return values[fieldKey] ?? "";
+}
+
+function projectQuotationMappedFieldInput(field, quotation, project) {
+  const value = projectQuotationMappedFieldValue(field.key, quotation, project);
+  const nameByField = {
+    managementNo: "management_no",
+    quotationNo: "quotation_no",
+    customer: "customer",
+    vessel: "vessel",
+    equipment: "equipment",
+    projectName: "title",
+    createdDate: "created_date",
+    issuedDate: "issued_date",
+    currency: "currency",
+    writer: "writer",
+  };
+  const name = nameByField[field.key] || field.key;
+  if (field.key === "currency") {
+    return `<label>${escapeTextarea(field.label)} <select class="text-field" name="${name}">${projectCurrencyOptions(value)}</select></label>`;
+  }
+  const type = ["createdDate", "issuedDate"].includes(field.key) ? "date" : "text";
+  return `<label>${escapeTextarea(field.label)} <input class="text-field" type="${type}" name="${name}" value="${escapeAttribute(String(value || ""))}" /></label>`;
+}
+
+function renderProjectQuotationMappedFields(template, quotation, project) {
+  const selectedFields = (template.infoFields || []).map((fieldKey) => PROJECT_TEMPLATE_INFO_FIELDS.find((field) => field.key === fieldKey)).filter(Boolean);
+  const fields = selectedFields.length ? selectedFields : PROJECT_TEMPLATE_INFO_FIELDS.slice(0, 6);
+  return `
+    <div class="project-quotation-mapped-fields">
+      <div class="project-quotation-mapped-title">
+        <strong>템플릿 참조 항목</strong>
+        <span>${escapeTextarea(template.name || "기본")}</span>
+      </div>
+      ${fields.map((field) => projectQuotationMappedFieldInput(field, quotation, project)).join("")}
     </div>
   `;
 }
