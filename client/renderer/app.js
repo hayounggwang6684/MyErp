@@ -758,6 +758,8 @@ const CUSTOMER_INLINE_EDIT_FIELDS = {
   tax_category: { label: "과세구분" },
   bank_account: { label: "은행계좌" },
   invoice_email: { label: "세금계산서발송메일" },
+  legacy_company_code: { label: "기존 회사코드" },
+  legacy_customer_id: { label: "기존 업체ID" },
   contact_name: { label: "영업담당자" },
   contact_phone: { label: "담당연락처" },
   postal_code: { label: "우편번호" },
@@ -779,6 +781,7 @@ const CUSTOMER_ASSET_EDIT_FIELDS = {
   imo_no: { label: "IMO" },
   vessel_type: { label: "선종" },
   registration_no: { label: "call.sign" },
+  legacy_ship_id: { label: "기존 선박ID" },
   notes: { label: "REMARK" },
 };
 
@@ -788,6 +791,8 @@ const CUSTOMER_EQUIPMENT_EDIT_FIELDS = {
   manufacturer: { label: "제조사" },
   model_name: { label: "모델명" },
   serial_no: { label: "SN" },
+  legacy_equipment_id: { label: "기존 장비ID" },
+  legacy_engine_id: { label: "기존 엔진ID" },
   notes: { label: "REMARK" },
 };
 
@@ -990,6 +995,8 @@ function customerEquipmentHistorySummary(history) {
     installation_position: "설치 위치",
     manufacturer: "제조사",
     model_name: "모델명",
+    legacy_equipment_id: "기존 장비ID",
+    legacy_engine_id: "기존 엔진ID",
     notes: "REMARK",
     deleted_at: "삭제일",
   };
@@ -1101,6 +1108,7 @@ function customerAssetUpdatePayload(asset, fieldKey, value) {
     asset_code: asset.assetCode || "",
     registration_no: asset.registrationNo || "",
     imo_no: asset.imoNo || "",
+    legacy_ship_id: asset.legacyShipId || "",
     location_description: asset.locationDescription || "",
     notes: asset.notes || "",
     [fieldKey]: value,
@@ -1120,6 +1128,8 @@ function customerEquipmentUpdatePayload(equipment, fieldKey, value) {
     gearbox_model_id: equipment.gearboxModelId || "",
     manufacturer: equipment.manufacturer || "",
     model_name: equipment.modelName || "",
+    legacy_equipment_id: equipment.legacyEquipmentId || "",
+    legacy_engine_id: equipment.legacyEngineId || "",
     notes: equipment.notes || "",
     [fieldKey]: value,
   };
@@ -1713,6 +1723,14 @@ function renderCustomerWorkspace() {
         <input class="customer-classic-input" name="business_registration_no" value="${escapeAttribute(createDraft.business_registration_no || "")}" />
       </label>
       <label class="customer-classic-field">
+        <span>기존 회사코드</span>
+        <input class="customer-classic-input" name="legacy_company_code" value="${escapeAttribute(createDraft.legacy_company_code || "")}" />
+      </label>
+      <label class="customer-classic-field">
+        <span>기존 업체ID</span>
+        <input class="customer-classic-input" name="legacy_customer_id" value="${escapeAttribute(createDraft.legacy_customer_id || "")}" />
+      </label>
+      <label class="customer-classic-field">
         <span>업태</span>
         <input class="customer-classic-input" name="business_category" value="${escapeAttribute(createDraft.business_category || "")}" />
       </label>
@@ -1754,6 +1772,8 @@ function renderCustomerWorkspace() {
         { label: "업체명", fieldKey: "customer_name", value: selected.customer.customerName || "" },
         { label: "대표자명", fieldKey: "representative_name", value: selected.customer.representativeName || "" },
         { label: "사업자번호", fieldKey: "business_registration_no", value: selected.customer.businessRegistrationNo || "" },
+        { label: "기존 회사코드", fieldKey: "legacy_company_code", value: selected.customer.legacyCompanyCode || "" },
+        { label: "기존 업체ID", fieldKey: "legacy_customer_id", value: selected.customer.legacyCustomerId || "" },
         { label: "업태", fieldKey: "business_category", value: selected.customer.businessCategory || "" },
         { label: "종목", fieldKey: "business_item", value: selected.customer.businessItem || "" },
         { label: "구분", fieldKey: "customer_type", value: selected.customer.customerType || "GENERAL", type: "select" },
@@ -1889,6 +1909,7 @@ function renderCustomerWorkspace() {
           <input class="text-field" name="imo_no" placeholder="IMO" value="${escapeAttribute(assetFormTarget?.imoNo || "")}" />
           <input class="text-field" name="vessel_type" placeholder="선종" value="${escapeAttribute(assetFormTarget?.vesselType || "")}" />
           <input class="text-field" name="registration_no" placeholder="call.sign" value="${escapeAttribute(assetFormTarget?.registrationNo || "")}" />
+          <input class="text-field" name="legacy_ship_id" placeholder="기존 선박ID" value="${escapeAttribute(assetFormTarget?.legacyShipId || "")}" />
           <textarea class="text-area" name="notes" placeholder="REMARK">${escapeTextarea(assetFormTarget?.notes || "")}</textarea>
         </div>
         <button class="secondary-button" type="submit">${assetEditorMode === "create" ? "선박 추가" : "선박 변경 저장"}</button>
@@ -1939,6 +1960,8 @@ function renderCustomerWorkspace() {
 	          </select>
 	          <input class="text-field" name="serial_no" placeholder="SN" value="${escapeAttribute(equipmentFormTarget?.serialNo || "")}" />
 	          <input class="text-field" name="installation_position" placeholder="설치 위치" value="${escapeAttribute(equipmentFormTarget?.installationPosition || "")}" />
+	          <input class="text-field" name="legacy_equipment_id" placeholder="기존 장비ID" value="${escapeAttribute(equipmentFormTarget?.legacyEquipmentId || "")}" />
+	          <input class="text-field" name="legacy_engine_id" placeholder="기존 엔진ID" value="${escapeAttribute(equipmentFormTarget?.legacyEngineId || "")}" />
 	          <textarea class="text-area" name="notes" placeholder="REMARK">${escapeTextarea(equipmentFormTarget?.notes || "")}</textarea>
 	        </div>
         <div class="customer-equipment-editor-actions">

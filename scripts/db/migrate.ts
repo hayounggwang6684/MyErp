@@ -154,6 +154,8 @@ async function migrate() {
       tax_category text not null default '',
       bank_account text not null default '',
       invoice_email text not null default '',
+      legacy_company_code text not null default '',
+      legacy_customer_id text not null default '',
       opening_date date null,
       notes text not null default '',
       created_at timestamptz not null default now(),
@@ -166,6 +168,8 @@ async function migrate() {
   await query(`alter table master.customers add column if not exists tax_category text not null default ''`);
   await query(`alter table master.customers add column if not exists bank_account text not null default ''`);
   await query(`alter table master.customers add column if not exists invoice_email text not null default ''`);
+  await query(`alter table master.customers add column if not exists legacy_company_code text not null default ''`);
+  await query(`alter table master.customers add column if not exists legacy_customer_id text not null default ''`);
   await query(`create sequence if not exists master.customer_no_seq start with 1 increment by 1`);
   await query(`
     select setval(
@@ -224,6 +228,7 @@ async function migrate() {
       status text not null default 'ACTIVE',
       registration_no text not null default '',
       imo_no text not null default '',
+      legacy_ship_id text not null default '',
       location_description text not null default '',
       notes text not null default '',
       created_at timestamptz not null default now(),
@@ -234,6 +239,7 @@ async function migrate() {
   `);
 
   await query(`alter table master.customer_assets add column if not exists vessel_type text not null default ''`);
+  await query(`alter table master.customer_assets add column if not exists legacy_ship_id text not null default ''`);
   await query(`alter table master.customer_assets add column if not exists deleted_at timestamptz null`);
   await query(`alter table master.customer_assets add column if not exists deleted_by text null references identity.users(id) on delete set null`);
 
@@ -283,6 +289,8 @@ async function migrate() {
       gearbox_model_id text null references master.gearbox_models(id) on delete set null,
       manufacturer text not null default '',
       model_name text not null default '',
+      legacy_equipment_id text not null default '',
+      legacy_engine_id text not null default '',
       notes text not null default '',
       created_at timestamptz not null default now(),
       created_by text null references identity.users(id) on delete set null,
@@ -293,6 +301,8 @@ async function migrate() {
 
   await query(`alter table master.customer_equipments add column if not exists deleted_at timestamptz null`);
   await query(`alter table master.customer_equipments add column if not exists deleted_by text null references identity.users(id) on delete set null`);
+  await query(`alter table master.customer_equipments add column if not exists legacy_equipment_id text not null default ''`);
+  await query(`alter table master.customer_equipments add column if not exists legacy_engine_id text not null default ''`);
 
   await query(`
     create table if not exists master.equipment_master_options (
@@ -662,6 +672,8 @@ async function migrate() {
       c.id,
       concat_ws(' ',
         c.customer_no,
+        c.legacy_company_code,
+        c.legacy_customer_id,
         c.customer_name,
         c.business_registration_no,
         c.representative_name,
@@ -671,14 +683,19 @@ async function migrate() {
         coalesce(string_agg(distinct cc.mobile_phone, ' '), ''),
         coalesce(string_agg(distinct cc.office_phone, ' '), ''),
         coalesce(string_agg(distinct a.asset_name, ' '), ''),
+        coalesce(string_agg(distinct a.legacy_ship_id, ' '), ''),
         coalesce(string_agg(distinct a.vessel_type, ' '), ''),
         coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+        coalesce(string_agg(distinct e.legacy_equipment_id, ' '), ''),
+        coalesce(string_agg(distinct e.legacy_engine_id, ' '), ''),
         coalesce(string_agg(distinct e.manufacturer, ' '), ''),
         coalesce(string_agg(distinct e.model_name, ' '), ''),
         coalesce(string_agg(distinct e.serial_no, ' '), '')
       ) as search_text,
       lower(regexp_replace(concat_ws(' ',
         c.customer_no,
+        c.legacy_company_code,
+        c.legacy_customer_id,
         c.customer_name,
         c.business_registration_no,
         regexp_replace(coalesce(c.business_registration_no, ''), '[^0-9a-zA-Z가-힣]+', '', 'g'),
@@ -692,8 +709,11 @@ async function migrate() {
         coalesce(string_agg(distinct cc.office_phone, ' '), ''),
         coalesce(string_agg(distinct regexp_replace(cc.office_phone, '[^0-9a-zA-Z가-힣]+', '', 'g'), ' '), ''),
         coalesce(string_agg(distinct a.asset_name, ' '), ''),
+        coalesce(string_agg(distinct a.legacy_ship_id, ' '), ''),
         coalesce(string_agg(distinct a.vessel_type, ' '), ''),
         coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+        coalesce(string_agg(distinct e.legacy_equipment_id, ' '), ''),
+        coalesce(string_agg(distinct e.legacy_engine_id, ' '), ''),
         coalesce(string_agg(distinct e.manufacturer, ' '), ''),
         coalesce(string_agg(distinct case when lower(e.manufacturer) = 'cat' then 'caterpillar' else e.manufacturer end, ' '), ''),
         coalesce(string_agg(distinct e.model_name, ' '), ''),

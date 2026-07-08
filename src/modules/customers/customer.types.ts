@@ -18,6 +18,8 @@ export type CustomerSummary = {
   taxCategory: string;
   bankAccount: string;
   invoiceEmail: string;
+  legacyCompanyCode: string;
+  legacyCustomerId: string;
   primaryContactName: string | null;
   primaryContactPhone: string | null;
   assetCount: number;
@@ -63,6 +65,7 @@ export type CustomerAsset = {
   status: string;
   registrationNo: string;
   imoNo: string;
+  legacyShipId: string;
   locationDescription: string;
   notes: string;
   updatedAt: string;
@@ -81,6 +84,8 @@ export type CustomerEquipment = {
   gearboxModelId: string | null;
   manufacturer: string;
   modelName: string;
+  legacyEquipmentId: string;
+  legacyEngineId: string;
   notes: string;
   createdByName: string | null;
   updatedByName: string | null;

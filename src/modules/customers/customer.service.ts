@@ -75,6 +75,8 @@ function mapCustomerSummary(row: {
   tax_category: string;
   bank_account: string;
   invoice_email: string;
+  legacy_company_code: string;
+  legacy_customer_id: string;
   primary_contact_name: string | null;
   primary_contact_phone: string | null;
   asset_count: number;
@@ -95,6 +97,8 @@ function mapCustomerSummary(row: {
     taxCategory: row.tax_category,
     bankAccount: row.bank_account,
     invoiceEmail: row.invoice_email,
+    legacyCompanyCode: row.legacy_company_code,
+    legacyCustomerId: row.legacy_customer_id,
     primaryContactName: row.primary_contact_name,
     primaryContactPhone: row.primary_contact_phone,
     assetCount: row.asset_count,
@@ -167,6 +171,7 @@ function mapAsset(row: {
   status: string;
   registration_no: string;
   imo_no: string;
+  legacy_ship_id: string;
   location_description: string;
   notes: string;
   updated_at: Date;
@@ -181,6 +186,7 @@ function mapAsset(row: {
     status: row.status,
     registrationNo: row.registration_no,
     imoNo: row.imo_no,
+    legacyShipId: row.legacy_ship_id,
     locationDescription: row.location_description,
     notes: row.notes,
     updatedAt: row.updated_at.toISOString(),
@@ -200,6 +206,8 @@ function mapEquipment(row: {
   gearbox_model_id: string | null;
   manufacturer: string;
   model_name: string;
+  legacy_equipment_id: string;
+  legacy_engine_id: string;
   notes: string;
   created_by_name?: string | null;
   updated_by_name?: string | null;
@@ -219,6 +227,8 @@ function mapEquipment(row: {
     gearboxModelId: row.gearbox_model_id,
     manufacturer: row.manufacturer,
     modelName: row.model_name,
+    legacyEquipmentId: row.legacy_equipment_id,
+    legacyEngineId: row.legacy_engine_id,
     notes: row.notes,
     createdByName: row.created_by_name || null,
     updatedByName: row.updated_by_name || null,
@@ -422,6 +432,8 @@ export class CustomerService {
          c.id,
          concat_ws(' ',
            c.customer_no,
+           c.legacy_company_code,
+           c.legacy_customer_id,
            c.customer_name,
            c.business_registration_no,
            c.representative_name,
@@ -431,14 +443,19 @@ export class CustomerService {
            coalesce(string_agg(distinct cc.mobile_phone, ' '), ''),
            coalesce(string_agg(distinct cc.office_phone, ' '), ''),
            coalesce(string_agg(distinct a.asset_name, ' '), ''),
+           coalesce(string_agg(distinct a.legacy_ship_id, ' '), ''),
            coalesce(string_agg(distinct a.vessel_type, ' '), ''),
            coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+           coalesce(string_agg(distinct e.legacy_equipment_id, ' '), ''),
+           coalesce(string_agg(distinct e.legacy_engine_id, ' '), ''),
            coalesce(string_agg(distinct e.manufacturer, ' '), ''),
            coalesce(string_agg(distinct e.model_name, ' '), ''),
            coalesce(string_agg(distinct e.serial_no, ' '), '')
          ) as search_text,
          lower(regexp_replace(concat_ws(' ',
            c.customer_no,
+           c.legacy_company_code,
+           c.legacy_customer_id,
            c.customer_name,
            c.business_registration_no,
            regexp_replace(coalesce(c.business_registration_no, ''), '[^0-9a-zA-Z가-힣]+', '', 'g'),
@@ -452,8 +469,11 @@ export class CustomerService {
            coalesce(string_agg(distinct cc.office_phone, ' '), ''),
            coalesce(string_agg(distinct regexp_replace(cc.office_phone, '[^0-9a-zA-Z가-힣]+', '', 'g'), ' '), ''),
            coalesce(string_agg(distinct a.asset_name, ' '), ''),
+           coalesce(string_agg(distinct a.legacy_ship_id, ' '), ''),
            coalesce(string_agg(distinct a.vessel_type, ' '), ''),
            coalesce(string_agg(distinct e.equipment_name, ' '), ''),
+           coalesce(string_agg(distinct e.legacy_equipment_id, ' '), ''),
+           coalesce(string_agg(distinct e.legacy_engine_id, ' '), ''),
            coalesce(string_agg(distinct e.manufacturer, ' '), ''),
            coalesce(string_agg(distinct case when lower(e.manufacturer) = 'cat' then 'caterpillar' else e.manufacturer end, ' '), ''),
            coalesce(string_agg(distinct e.model_name, ' '), ''),
@@ -477,7 +497,8 @@ export class CustomerService {
   private async getEquipmentSnapshot(equipmentId: string, executor: DbExecutor) {
     const result = await executor.query<Record<string, unknown>>(
       `select id, asset_id, customer_id, equipment_name, equipment_type, status, serial_no, installation_position,
-              engine_model_id, gearbox_model_id, manufacturer, model_name, notes, deleted_at, created_at, updated_at
+              engine_model_id, gearbox_model_id, manufacturer, model_name, legacy_equipment_id, legacy_engine_id,
+              notes, deleted_at, created_at, updated_at
        from master.customer_equipments
        where id = $1`,
       [equipmentId],
@@ -531,6 +552,8 @@ export class CustomerService {
       tax_category: string;
       bank_account: string;
       invoice_email: string;
+      legacy_company_code: string;
+      legacy_customer_id: string;
       primary_contact_name: string | null;
       primary_contact_phone: string | null;
       asset_count: number;
@@ -554,6 +577,8 @@ export class CustomerService {
            c.tax_category,
            c.bank_account,
            c.invoice_email,
+           c.legacy_company_code,
+           c.legacy_customer_id,
            pc.contact_name as primary_contact_name,
            nullif(coalesce(pc.mobile_phone, pc.office_phone), '') as primary_contact_phone,
            coalesce(ac.asset_count, 0)::int as asset_count,
@@ -604,6 +629,8 @@ export class CustomerService {
          matched.tax_category,
          matched.bank_account,
          matched.invoice_email,
+         matched.legacy_company_code,
+         matched.legacy_customer_id,
          pc.contact_name as primary_contact_name,
          nullif(coalesce(pc.mobile_phone, pc.office_phone), '') as primary_contact_phone,
          coalesce(ac.asset_count, 0)::int as asset_count,
@@ -624,6 +651,8 @@ export class CustomerService {
            c.tax_category,
            c.bank_account,
            c.invoice_email,
+           c.legacy_company_code,
+           c.legacy_customer_id,
            c.updated_at,
            si.search_text
          from master.customers c
@@ -681,6 +710,8 @@ export class CustomerService {
       tax_category: string;
       bank_account: string;
       invoice_email: string;
+      legacy_company_code: string;
+      legacy_customer_id: string;
       business_category: string;
       business_item: string;
       opening_date: Date | null;
@@ -704,6 +735,8 @@ export class CustomerService {
          c.tax_category,
          c.bank_account,
          c.invoice_email,
+         c.legacy_company_code,
+         c.legacy_customer_id,
          c.business_category,
          c.business_item,
          c.opening_date,
@@ -781,6 +814,7 @@ export class CustomerService {
         status: string;
         registration_no: string;
         imo_no: string;
+        legacy_ship_id: string;
         location_description: string;
         notes: string;
         updated_at: Date;
@@ -805,6 +839,8 @@ export class CustomerService {
         gearbox_model_id: string | null;
         manufacturer: string;
         model_name: string;
+        legacy_equipment_id: string;
+        legacy_engine_id: string;
         notes: string;
         created_by_name: string | null;
         updated_by_name: string | null;
@@ -919,6 +955,8 @@ export class CustomerService {
         taxCategory: customer.tax_category,
         bankAccount: customer.bank_account,
         invoiceEmail: customer.invoice_email,
+        legacyCompanyCode: customer.legacy_company_code,
+        legacyCustomerId: customer.legacy_customer_id,
         openingDate: customer.opening_date?.toISOString().slice(0, 10) || null,
         notes: customer.notes,
       },
@@ -951,8 +989,8 @@ export class CustomerService {
         `insert into master.customers (
            id, customer_no, customer_name, customer_type, status, business_registration_no, representative_name,
            company_phone, company_email, business_category, business_item, tax_category, bank_account, invoice_email,
-           opening_date, notes, created_by, updated_by
-         ) values ($1, $2, $3, $4, 'ACTIVE', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)`,
+           legacy_company_code, legacy_customer_id, opening_date, notes, created_by, updated_by
+         ) values ($1, $2, $3, $4, 'ACTIVE', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18)`,
         [
           customerId,
           customerNo,
@@ -967,6 +1005,8 @@ export class CustomerService {
           text(input.tax_category),
           text(input.bank_account),
           text(input.invoice_email),
+          text(input.legacy_company_code),
+          text(input.legacy_customer_id),
           nullableText(input.opening_date),
           text(input.notes),
           actorUserId,
@@ -1030,6 +1070,8 @@ export class CustomerService {
         ["tax_category", "tax_category", (value) => text(value)],
         ["bank_account", "bank_account", (value) => text(value)],
         ["invoice_email", "invoice_email", (value) => text(value)],
+        ["legacy_company_code", "legacy_company_code", (value) => text(value)],
+        ["legacy_customer_id", "legacy_customer_id", (value) => text(value)],
         ["opening_date", "opening_date", nullableText],
         ["notes", "notes", (value) => text(value)],
       ];
@@ -1266,8 +1308,8 @@ export class CustomerService {
       const assetId = crypto.randomUUID();
       await client.query(
         `insert into master.customer_assets (
-           id, customer_id, asset_name, asset_type, vessel_type, asset_code, status, registration_no, imo_no, location_description, notes, created_by, updated_by
-         ) values ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, $8, $9, $10, $11, $11)`,
+           id, customer_id, asset_name, asset_type, vessel_type, asset_code, status, registration_no, imo_no, legacy_ship_id, location_description, notes, created_by, updated_by
+         ) values ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, $8, $9, $10, $11, $12, $12)`,
         [
           assetId,
           customerId,
@@ -1277,6 +1319,7 @@ export class CustomerService {
           text(input.asset_code),
           text(input.registration_no),
           text(input.imo_no),
+          text(input.legacy_ship_id),
           text(input.location_description),
           text(input.notes),
           actorUserId,
@@ -1306,6 +1349,7 @@ export class CustomerService {
         ["asset_code", "asset_code", (value) => text(value)],
         ["registration_no", "registration_no", (value) => text(value)],
         ["imo_no", "imo_no", (value) => text(value)],
+        ["legacy_ship_id", "legacy_ship_id", (value) => text(value)],
         ["location_description", "location_description", (value) => text(value)],
         ["notes", "notes", (value) => text(value)],
       ];
@@ -1410,8 +1454,9 @@ export class CustomerService {
       await client.query(
         `insert into master.customer_equipments (
            id, asset_id, customer_id, equipment_name, equipment_type, status, serial_no, installation_position,
-           engine_model_id, gearbox_model_id, manufacturer, model_name, notes, created_by, updated_by
-         ) values ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7, $8, $9, $10, $11, $12, $13, $13)`,
+           engine_model_id, gearbox_model_id, manufacturer, model_name, legacy_equipment_id, legacy_engine_id,
+           notes, created_by, updated_by
+         ) values ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)`,
         [
           equipmentId,
           assetId,
@@ -1424,6 +1469,8 @@ export class CustomerService {
           nullableText(input.gearbox_model_id),
           canonicalEquipmentMasterValue("manufacturer", input.manufacturer),
           text(input.model_name),
+          text(input.legacy_equipment_id),
+          text(input.legacy_engine_id),
           text(input.notes),
           actorUserId,
         ],
@@ -1464,6 +1511,8 @@ export class CustomerService {
         ["gearbox_model_id", "gearbox_model_id", nullableText],
         ["manufacturer", "manufacturer", (value) => canonicalEquipmentMasterValue("manufacturer", value)],
         ["model_name", "model_name", (value) => text(value)],
+        ["legacy_equipment_id", "legacy_equipment_id", (value) => text(value)],
+        ["legacy_engine_id", "legacy_engine_id", (value) => text(value)],
         ["notes", "notes", (value) => text(value)],
       ];
       const assignments: string[] = [];
