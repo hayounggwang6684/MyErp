@@ -20,6 +20,26 @@ let updateCheckInFlight = false;
 let startupRetryCount = 0;
 let backgroundRecheckTimer = null;
 let isQuitting = false;
+let installingUpdate = false;
+
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on("second-instance", () => {
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : splashWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  if (targetWindow.isMinimized()) {
+    targetWindow.restore();
+  }
+  targetWindow.focus();
+});
+
 const defaultPreferences = {
   rememberedUsername: "",
   autoLoginEnabled: false,
@@ -699,13 +719,39 @@ function scheduleStartupRetry(error) {
   }, 8000);
 }
 
+function installDownloadedUpdate() {
+  if (installingUpdate) {
+    return;
+  }
+
+  installingUpdate = true;
+  isQuitting = true;
+  updateCheckInFlight = false;
+
+  if (backgroundRecheckTimer) {
+    clearTimeout(backgroundRecheckTimer);
+    backgroundRecheckTimer = null;
+  }
+
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.removeAllListeners("close");
+      window.close();
+    }
+  }
+
+  setTimeout(() => {
+    autoUpdater.quitAndInstall(false, true);
+  }, 500);
+}
+
 function registerAutoUpdater() {
   if (process.platform === "darwin") {
     return;
   }
 
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on("checking-for-update", () => {
     updateCheckInFlight = true;
@@ -751,9 +797,7 @@ function registerAutoUpdater() {
     });
 
     if (startupUpdateMode) {
-      setTimeout(() => {
-        autoUpdater.quitAndInstall(true, true);
-      }, 1200);
+      setTimeout(installDownloadedUpdate, 1200);
       return;
     }
 
@@ -768,7 +812,7 @@ function registerAutoUpdater() {
     });
 
     if (prompt.response === 1) {
-      autoUpdater.quitAndInstall(true, true);
+      installDownloadedUpdate();
     }
   });
 
